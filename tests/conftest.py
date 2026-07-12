@@ -17,6 +17,7 @@ os.environ["DATABASE_URL"] = "postgresql+psycopg2://revisit:revisit@localhost:54
 # Disable real API calls; embeddings fall back to fake-local-dev-v1.
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("SEARCH_PROVIDER", None)
+os.environ.pop("TAVILY_API_KEY", None)
 os.environ.pop("SEARCH_API_KEY", None)
 
 import pytest

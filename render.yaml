@@ -4,10 +4,10 @@
 ## Usage:
 ##   1. Push this repo to GitHub.
 ##   2. In the Render dashboard → New → Blueprint → select this repo.
-##   3. Set the four secret env vars marked `sync: false` in the dashboard
+##   3. Set the secret env vars marked `sync: false` in the dashboard
 ##      (APP_USERNAME, APP_PASSWORD, OPENAI_API_KEY, and optionally
-##      SEARCH_API_KEY).
-##   4. Deploy — Render runs `alembic upgrade head` then starts gunicorn.
+##      TAVILY_API_KEY).
+##   4. Deploy — startup runs `alembic upgrade head` then starts gunicorn.
 
 services:
   - type: web
@@ -40,10 +40,11 @@ services:
         value: gpt-4o-mini
 
       # Web search for related resources — optional.
-      # Set SEARCH_PROVIDER=brave and SEARCH_API_KEY=<key> to enable real search.
+      # Set SEARCH_PROVIDER=tavily and TAVILY_API_KEY=<key> to enable real search.
+      # Without both set, retrieval falls back to a fake local provider.
       - key: SEARCH_PROVIDER
-        value: ""
-      - key: SEARCH_API_KEY
+        value: tavily
+      - key: TAVILY_API_KEY
         sync: false   # set in Render dashboard if using real search
 
       - key: PYTHON_VERSION

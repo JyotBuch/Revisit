@@ -1,15 +1,18 @@
 """Related-resource retrieval for clusters.
 
-v1 supports one real provider — Brave Search, via SEARCH_PROVIDER=brave +
-SEARCH_API_KEY — and a deterministic fake provider used whenever a real
-provider isn't configured or the real call fails/returns nothing. The
-fake provider is clearly development/testing only: it does not search the
-web. It fabricates plausible-looking resource candidates derived from a
-hash of the cluster's own title/context (the same pattern used for fake
-embeddings elsewhere in this codebase), so the retrieve -> validate ->
-store loop can be built and exercised end-to-end without a live search API
-key. Real and fake candidates flow through the exact same validation step,
-so neither path gets special treatment.
+Supports one real provider — Tavily Search, via SEARCH_PROVIDER=tavily +
+TAVILY_API_KEY (or SEARCH_API_KEY as a legacy fallback) — and a
+deterministic fake provider used whenever a real provider isn't configured
+or the real call fails/returns nothing. Brave Search (SEARCH_PROVIDER=brave)
+is kept for backward compatibility but Tavily is the recommended provider.
+
+The fake provider is clearly development/testing only: it does not search the
+web. It fabricates plausible-looking resource candidates derived from a hash
+of the cluster's own title/context (the same pattern used for fake embeddings
+elsewhere in this codebase), so the retrieve -> validate -> store loop can be
+built and exercised end-to-end without a live search API key. Real and fake
+candidates flow through the exact same validation step, so neither path gets
+special treatment.
 
 This does not scrape arbitrary pages — only a provider's own search result
 metadata (url/title/snippet) is used, never page content.
@@ -35,7 +38,7 @@ from app.services.resource_validation import validate_resource_for_cluster
 logger = logging.getLogger("revisit.retrieval")
 
 FAKE_PROVIDER_NAME = "fake-local-dev-v1"
-_SUPPORTED_REAL_PROVIDERS = {"brave"}
+_SUPPORTED_REAL_PROVIDERS = {"tavily", "brave"}
 
 
 @dataclass
@@ -115,6 +118,41 @@ def _fake_resources_for_query(
     return candidates
 
 
+def _tavily_search(query: str, limit: int, api_key: str) -> List[ResourceCandidate]:
+    response = requests.post(
+        "https://api.tavily.com/search",
+        json={
+            "api_key": api_key,
+            "query": query,
+            "max_results": limit,
+            "search_depth": "basic",
+            "include_answer": False,
+            "include_images": False,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    results = response.json().get("results") or []
+
+    candidates = []
+    for item in results[:limit]:
+        url = item.get("url")
+        title = item.get("title")
+        if not url or not title:
+            continue
+        candidates.append(
+            ResourceCandidate(
+                url=url,
+                title=title,
+                source_type="article",
+                snippet=item.get("content"),
+                query=query,
+                provider="tavily",
+            )
+        )
+    return candidates
+
+
 def _brave_search(query: str, limit: int, api_key: str) -> List[ResourceCandidate]:
     response = requests.get(
         "https://api.search.brave.com/res/v1/web/search",
@@ -144,6 +182,17 @@ def _brave_search(query: str, limit: int, api_key: str) -> List[ResourceCandidat
     return candidates
 
 
+def _get_api_key(provider: str) -> Optional[str]:
+    """Return the API key for the given provider.
+
+    For Tavily: checks TAVILY_API_KEY first, then SEARCH_API_KEY (legacy).
+    For Brave and others: checks SEARCH_API_KEY only.
+    """
+    if provider == "tavily":
+        return os.environ.get("TAVILY_API_KEY") or os.environ.get("SEARCH_API_KEY")
+    return os.environ.get("SEARCH_API_KEY")
+
+
 def retrieve_resources_for_cluster(
     db: Session, cluster_id: str, limit: int = 5
 ) -> Optional[List[ResourceCandidate]]:
@@ -157,11 +206,15 @@ def retrieve_resources_for_cluster(
 
     query = generate_cluster_search_query(cluster)
     provider = os.environ.get("SEARCH_PROVIDER")
-    api_key = os.environ.get("SEARCH_API_KEY")
+    api_key = _get_api_key(provider) if provider else None
 
     if provider in _SUPPORTED_REAL_PROVIDERS and api_key:
         try:
-            candidates = _brave_search(query, limit, api_key)
+            if provider == "tavily":
+                candidates = _tavily_search(query, limit, api_key)
+            else:
+                candidates = _brave_search(query, limit, api_key)
+
             if candidates:
                 return candidates
             logger.info(
