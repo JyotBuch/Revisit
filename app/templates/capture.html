@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Capture — Revisit{% endblock %}
+
+{% block content %}
+<h1>New Capture</h1>
+<div id="alert-area"></div>
+
+<div class="card">
+  <form id="capture-form">
+    <label for="source_type">Source type *</label>
+    <select id="source_type" name="source_type" required>
+      <option value="article">Article</option>
+      <option value="passage">Passage</option>
+      <option value="video">Video</option>
+      <option value="image">Image</option>
+      <option value="note">Note</option>
+    </select>
+
+    <label for="label">Label *</label>
+    <select id="label" name="label" required>
+      <option value="return">Return (research)</option>
+      <option value="casual">Casual</option>
+    </select>
+
+    <label for="url">URL</label>
+    <input type="url" id="url" name="url" placeholder="https://..." />
+
+    <label for="title">Title</label>
+    <input type="text" id="title" name="title" placeholder="Optional title" />
+
+    <label for="selected_text">Selected text</label>
+    <textarea id="selected_text" name="selected_text" placeholder="Text you selected from the source…"></textarea>
+
+    <label for="user_note">Your note</label>
+    <textarea id="user_note" name="user_note" placeholder="Why did you save this? What do you want to follow up on?"></textarea>
+
+    <p class="meta" style="margin-top:.75rem">* At least one of URL, selected text, or note is required.</p>
+
+    <div style="margin-top:1rem">
+      <button type="submit" class="btn btn-primary" id="submit-btn">Save capture</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('capture-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  clearAlert();
+
+  const fd = new FormData(e.target);
+  const body = {};
+  for (const [k, v] of fd.entries()) {
+    if (v.trim()) body[k] = v.trim();
+  }
+
+  try {
+    const card = await api('POST', '/captures', body);
+    showAlert('success', `Capture saved! ID: ${card.id}`);
+    e.target.reset();
+  } catch (err) {
+    showAlert('error', err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save capture';
+  }
+});
+
+function showAlert(type, msg) {
+  document.getElementById('alert-area').innerHTML =
+    `<div class="alert alert-${type === 'success' ? 'success' : 'error'}">${msg}</div>`;
+}
+
+function clearAlert() {
+  document.getElementById('alert-area').innerHTML = '';
+}
+</script>
+{% endblock %}

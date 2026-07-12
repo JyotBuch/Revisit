@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Backlog — Revisit{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0">Backlog</h1>
+  <button class="btn btn-secondary btn-sm" onclick="loadCards()">Refresh</button>
+</div>
+
+<div id="alert-area"></div>
+<div id="cards-area"><p class="loading">Loading…</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadCards() {
+  const area = document.getElementById('cards-area');
+  area.innerHTML = '<p class="loading">Loading…</p>';
+  try {
+    const cards = await api('GET', '/revisit-cards');
+    if (!cards.length) {
+      area.innerHTML = '<p class="loading">No cards yet — run the daily batch to generate some.</p>';
+      return;
+    }
+    const cluster = cards.filter(c => c.card_type === 'cluster');
+    const individual = cards.filter(c => c.card_type === 'individual');
+    let html = '';
+    if (cluster.length) {
+      html += `<h2>Cluster cards (${cluster.length})</h2>`;
+      html += cluster.map(renderCard).join('');
+    }
+    if (individual.length) {
+      html += `<hr class="divider"><h2>Individual cards (${individual.length})</h2>`;
+      html += individual.map(renderCard).join('');
+    }
+    area.innerHTML = html;
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function renderCard(card) {
+  const typeTag = card.card_type === 'cluster'
+    ? tag('cluster', 'tag-cluster')
+    : tag('individual', 'tag-individual');
+  const methodTag = card.generation_method === 'llm'
+    ? tag('llm', 'tag-llm')
+    : tag('rule-based', 'tag-rule');
+
+  let resources = '';
+  if (card.resources && card.resources.length) {
+    const items = card.resources.map(r =>
+      `<li><a href="${r.url}" target="_blank" rel="noopener">${r.title || r.url}</a>` +
+      (r.snippet ? ` <span class="meta">— ${r.snippet.slice(0,120)}</span>` : '') +
+      `</li>`
+    ).join('');
+    resources = `
+      <div class="field-block">
+        <div class="section-label">Resources</div>
+        <ul class="resource-list">${items}</ul>
+      </div>`;
+  }
+
+  return `
+  <div class="card" id="card-${card.id}">
+    <div class="card-header">
+      <span class="card-title">${escHtml(card.title)}</span>
+      <span>${typeTag} ${methodTag}</span>
+    </div>
+    <div class="meta">${fmtDate(card.created_at)}</div>
+
+    <div class="field-block">
+      <div class="section-label">Why saved</div>
+      <div class="body-text">${escHtml(card.why_saved)}</div>
+    </div>
+
+    ${card.original_context ? `
+    <div class="field-block">
+      <div class="section-label">Context</div>
+      <div class="body-text">${escHtml(card.original_context)}</div>
+    </div>` : ''}
+
+    <div class="field-block">
+      <div class="section-label">Next action</div>
+      <div class="body-text">${escHtml(card.next_action)}</div>
+    </div>
+
+    ${resources}
+
+    <div class="feedback-row">
+      ${['opened','useful','not_useful','dismissed','next_action_taken'].map(action =>
+        `<button class="btn btn-secondary btn-sm" onclick="sendFeedback('${card.id}','${action}',this)">
+          ${action.replace(/_/g,' ')}
+        </button>`
+      ).join('')}
+    </div>
+    <div id="fb-${card.id}" class="meta" style="margin-top:.4rem"></div>
+  </div>`;
+}
+
+async function sendFeedback(cardId, action, btn) {
+  btn.disabled = true;
+  try {
+    await api('POST', `/revisit-cards/${cardId}/feedback`, { action });
+    document.getElementById(`fb-${cardId}`).textContent = `✓ Logged: ${action}`;
+  } catch (err) {
+    document.getElementById(`fb-${cardId}`).textContent = `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadCards();
+</script>
+{% endblock %}

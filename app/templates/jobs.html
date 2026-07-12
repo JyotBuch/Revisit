@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Jobs — Revisit{% endblock %}
+
+{% block content %}
+<h1>Jobs</h1>
+
+<div class="card">
+  <h2>Run Daily Batch</h2>
+  <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-top:.5rem">
+    <label style="margin:0;font-size:.9rem;color:var(--text)">Generation method:</label>
+    <select id="gen-method" style="width:auto;padding:.4rem .6rem">
+      <option value="rule_based">rule_based</option>
+      <option value="llm">llm</option>
+    </select>
+    <button class="btn btn-primary" id="run-btn" onclick="runBatch()">Run batch</button>
+  </div>
+  <div id="run-result" class="meta" style="margin-top:.6rem"></div>
+</div>
+
+<div class="toolbar" style="margin-top:1.5rem">
+  <h2 style="margin:0">Recent Jobs</h2>
+  <button class="btn btn-secondary btn-sm" onclick="loadJobs()">Refresh</button>
+</div>
+<div id="jobs-area"><p class="loading">Loading…</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runBatch() {
+  const method = document.getElementById('gen-method').value;
+  const btn = document.getElementById('run-btn');
+  const result = document.getElementById('run-result');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  result.textContent = 'Batch running — this may take a moment…';
+  try {
+    const job = await api('POST', `/jobs/daily-batch?generation_method=${method}`);
+    result.innerHTML = `✓ Batch complete — status: <strong>${job.status}</strong> · Job ID: ${job.id}`;
+    loadJobs();
+  } catch (err) {
+    result.textContent = `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run batch';
+  }
+}
+
+async function loadJobs() {
+  const area = document.getElementById('jobs-area');
+  area.innerHTML = '<p class="loading">Loading…</p>';
+  try {
+    const jobs = await api('GET', '/jobs');
+    if (!jobs.length) {
+      area.innerHTML = '<p class="loading">No jobs yet.</p>';
+      return;
+    }
+    area.innerHTML = jobs.slice().reverse().map(renderJob).join('');
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function renderJob(j) {
+  const statusTag = j.status === 'succeeded'
+    ? tag('succeeded', 'tag-success')
+    : j.status === 'failed'
+      ? tag('failed', 'tag-failed')
+      : tag('running', 'tag-running');
+
+  let summary = '';
+  if (j.summary_json) {
+    const rows = Object.entries(j.summary_json).map(([k, v]) =>
+      `<tr><td>${escHtml(k)}</td><td><strong>${escHtml(String(v))}</strong></td></tr>`
+    ).join('');
+    summary = `
+      <div class="field-block">
+        <div class="section-label">Summary</div>
+        <table class="summary-table"><tbody>${rows}</tbody></table>
+      </div>`;
+  }
+
+  const err = j.error ? `<div class="alert alert-error" style="margin-top:.6rem">${escHtml(j.error)}</div>` : '';
+
+  return `
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">${j.job_type}</span>
+      ${statusTag}
+    </div>
+    <div class="meta">
+      Started: ${fmtDate(j.started_at)}
+      ${j.completed_at ? ' · Completed: ' + fmtDate(j.completed_at) : ''}
+    </div>
+    <div class="meta" style="font-size:.75rem;color:var(--text-muted)">${j.id}</div>
+    ${err}
+    ${summary}
+  </div>`;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadJobs();
+</script>
+{% endblock %}

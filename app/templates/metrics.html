@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Metrics — Revisit{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0">Observability</h1>
+  <button class="btn btn-secondary btn-sm" onclick="loadMetrics()">Refresh</button>
+</div>
+<div id="metrics-area"><p class="loading">Loading…</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadMetrics() {
+  const area = document.getElementById('metrics-area');
+  area.innerHTML = '<p class="loading">Loading…</p>';
+  try {
+    const m = await api('GET', '/metrics/observability');
+    area.innerHTML = [
+      renderSection('Pipeline', renderPipeline(m.pipeline)),
+      renderSection('Revisit Cards', renderKV(m.revisit_cards)),
+      renderSection('Feedback', renderKV(m.feedback)),
+      renderSection('Eval', renderKV(m.eval)),
+      renderSection('Jobs', renderKV(m.jobs)),
+      renderSection('Resources', renderKV(m.resources)),
+    ].join('');
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function renderSection(title, inner) {
+  return `<div class="card"><h2>${title}</h2>${inner}</div>`;
+}
+
+function renderPipeline(p) {
+  const statGrid = `
+    <div class="grid-2" style="margin-bottom:1rem">
+      ${stat(p.total_captures, 'Total captures')}
+      ${stat(p.total_embeddings, 'Embeddings')}
+      ${stat(p.active_clusters, 'Active clusters')}
+      ${stat(p.archived_clusters, 'Archived clusters')}
+      ${stat(p.total_cluster_items, 'Cluster items')}
+      ${stat(p.singleton_clusters, 'Singleton clusters')}
+    </div>`;
+
+  const byStatus = Object.entries(p.captures_by_status || {}).map(([k,v]) =>
+    `<tr><td>${k}</td><td><strong>${v}</strong></td></tr>`).join('');
+  const bySource = Object.entries(p.captures_by_source_type || {}).map(([k,v]) =>
+    `<tr><td>${k}</td><td><strong>${v}</strong></td></tr>`).join('');
+
+  const extra = renderKV({
+    average_cluster_size: p.average_cluster_size,
+    cluster_reuse_count: p.cluster_reuse_count,
+    new_clusters_created: p.new_clusters_created,
+    archived_clusters_count: p.archived_clusters_count,
+  });
+
+  return `
+    ${statGrid}
+    <div class="grid-2">
+      <div>
+        <div class="section-label">By status</div>
+        <table class="summary-table"><tbody>${byStatus}</tbody></table>
+      </div>
+      <div>
+        <div class="section-label">By source type</div>
+        <table class="summary-table"><tbody>${bySource}</tbody></table>
+      </div>
+    </div>
+    <div style="margin-top:.75rem">
+      <div class="section-label">Last batch summary</div>
+      ${extra}
+    </div>`;
+}
+
+function stat(value, label) {
+  return `
+    <div class="stat-block">
+      <div class="stat-value">${value ?? '—'}</div>
+      <div class="stat-label">${label}</div>
+    </div>`;
+}
+
+function renderKV(obj) {
+  if (!obj) return '<p class="meta">No data.</p>';
+  const rows = Object.entries(obj).map(([k, v]) => {
+    const disp = v === null || v === undefined ? '<span class="meta">—</span>'
+      : typeof v === 'object' ? `<pre style="font-size:.8rem;margin:0">${JSON.stringify(v, null, 2)}</pre>`
+      : `<strong>${escHtml(String(v))}</strong>`;
+    return `<tr><td>${escHtml(k)}</td><td>${disp}</td></tr>`;
+  }).join('');
+  return `<table class="summary-table"><tbody>${rows}</tbody></table>`;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadMetrics();
+</script>
+{% endblock %}

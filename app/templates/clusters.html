@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Clusters — Revisit{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0">Clusters</h1>
+  <button class="btn btn-secondary btn-sm" onclick="loadClusters()">Refresh</button>
+  <label style="margin:0;display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--text-muted)">
+    <input type="checkbox" id="include-archived" onchange="loadClusters()" />
+    Show archived
+  </label>
+</div>
+
+<div id="alert-area"></div>
+<div id="clusters-area"><p class="loading">Loading…</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadClusters() {
+  const area = document.getElementById('clusters-area');
+  area.innerHTML = '<p class="loading">Loading…</p>';
+  const archived = document.getElementById('include-archived').checked;
+  try {
+    const clusters = await api('GET', `/clusters?include_archived=${archived}`);
+    if (!clusters.length) {
+      area.innerHTML = '<p class="loading">No clusters yet — run the daily batch first.</p>';
+      return;
+    }
+    area.innerHTML = clusters.map(renderCluster).join('');
+    clusters.forEach(c => loadResources(c.id));
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function renderCluster(c) {
+  const statusTag = c.status === 'archived'
+    ? tag('archived', 'tag-failed')
+    : tag('active', 'tag-success');
+
+  const captures = (c.captures || []).map(item => {
+    const cap = item.capture;
+    const score = item.similarity_score != null
+      ? ` <span class="meta">(${item.similarity_score.toFixed(2)})</span>`
+      : '';
+    return `<li>${escHtml(cap.title || cap.url || cap.id)}${score} <span class="meta">${cap.source_type} · ${cap.label}</span></li>`;
+  }).join('');
+
+  return `
+  <div class="card" id="cluster-${c.id}">
+    <div class="card-header">
+      <span class="card-title">${escHtml(c.title)}</span>
+      ${statusTag}
+    </div>
+    <div class="meta">
+      ${c.captures.length} capture(s) · last clustered ${fmtDate(c.last_clustered_at)}
+    </div>
+
+    ${c.description ? `<div class="field-block body-text">${escHtml(c.description)}</div>` : ''}
+
+    <div class="field-block">
+      <div class="section-label">Captures</div>
+      <ul class="captures-list">${captures || '<li class="meta">None</li>'}</ul>
+    </div>
+
+    <div class="field-block" id="resources-${c.id}">
+      <div class="section-label">Resources</div>
+      <p class="loading" style="font-size:.8rem">Loading…</p>
+    </div>
+
+    <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+      <select id="method-${c.id}" style="width:auto;padding:.3rem .6rem;font-size:.85rem">
+        <option value="rule_based">rule_based</option>
+        <option value="llm">llm</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="generateCard('${c.id}')">
+        Generate Revisit Card
+      </button>
+    </div>
+    <div id="card-result-${c.id}" class="meta" style="margin-top:.4rem"></div>
+  </div>`;
+}
+
+async function loadResources(clusterId) {
+  const area = document.getElementById(`resources-${clusterId}`);
+  if (!area) return;
+  try {
+    const resources = await api('GET', `/clusters/${clusterId}/resources`);
+    if (!resources.length) {
+      area.innerHTML = '<div class="section-label">Resources</div><p class="meta" style="font-size:.8rem">None yet.</p>';
+      return;
+    }
+    const items = resources.map(r =>
+      `<li>
+        <a href="${r.url}" target="_blank" rel="noopener">${escHtml(r.title || r.url)}</a>` +
+      (r.validation_score != null ? ` <span class="meta">score: ${r.validation_score.toFixed(2)}</span>` : '') +
+      (r.snippet ? `<div class="meta">${escHtml(r.snippet.slice(0, 140))}</div>` : '') +
+      `</li>`
+    ).join('');
+    area.innerHTML = `<div class="section-label">Resources (${resources.length})</div><ul class="resource-list">${items}</ul>`;
+  } catch {
+    area.innerHTML = '<div class="section-label">Resources</div><p class="meta" style="font-size:.8rem">Could not load.</p>';
+  }
+}
+
+async function generateCard(clusterId) {
+  const method = document.getElementById(`method-${clusterId}`).value;
+  const result = document.getElementById(`card-result-${clusterId}`);
+  result.textContent = 'Generating…';
+  try {
+    const card = await api('POST', `/clusters/${clusterId}/revisit-card?generation_method=${method}&include_resources=true`);
+    result.innerHTML = `✓ Card created: <strong>${escHtml(card.title)}</strong> — <a href="/app/backlog">view in backlog</a>`;
+  } catch (err) {
+    result.textContent = `Error: ${err.message}`;
+  }
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadClusters();
+</script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Telemetry — Revisit{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0">Telemetry</h1>
+  <button class="btn btn-secondary btn-sm" onclick="loadAll()">Refresh</button>
+</div>
+
+<div id="summary-area"><p class="loading">Loading summary…</p></div>
+<div id="llm-calls-area"><p class="loading">Loading LLM calls…</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAll() {
+  loadSummary();
+  loadLlmCalls();
+}
+
+async function loadSummary() {
+  const area = document.getElementById('summary-area');
+  try {
+    const s = await api('GET', '/telemetry/summary');
+    const costStr = s.estimated_cost_usd != null
+      ? `$${s.estimated_cost_usd.toFixed(6)}`
+      : '—';
+    area.innerHTML = `
+      <div class="card">
+        <h2>Summary</h2>
+        <div class="grid-2" style="margin-bottom:1rem">
+          ${stat(s.total_llm_calls, 'LLM calls')}
+          ${stat(s.total_tokens.toLocaleString(), 'Total tokens')}
+          ${stat(costStr, 'Estimated cost')}
+          ${stat(s.average_llm_latency_ms != null ? s.average_llm_latency_ms + ' ms' : '—', 'Avg LLM latency')}
+          ${stat(s.failed_agent_steps, 'Failed agent steps')}
+          ${stat(s.retrieval_events, 'Retrieval events')}
+        </div>
+        ${renderCallsByStatus(s.llm_calls_by_status)}
+        ${renderTokensByModel(s.tokens_by_model)}
+      </div>`;
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function renderCallsByStatus(obj) {
+  if (!obj || !Object.keys(obj).length) return '';
+  const rows = Object.entries(obj).map(([k, v]) =>
+    `<tr><td>${escHtml(k)}</td><td><strong>${v}</strong></td></tr>`
+  ).join('');
+  return `
+    <div class="section-label" style="margin-top:.75rem">LLM calls by status</div>
+    <table class="summary-table"><tbody>${rows}</tbody></table>`;
+}
+
+function renderTokensByModel(obj) {
+  if (!obj || !Object.keys(obj).length) return '';
+  const rows = Object.entries(obj).map(([k, v]) =>
+    `<tr><td>${escHtml(k)}</td><td><strong>${Number(v).toLocaleString()}</strong></td></tr>`
+  ).join('');
+  return `
+    <div class="section-label" style="margin-top:.75rem">Tokens by model</div>
+    <table class="summary-table"><tbody>${rows}</tbody></table>`;
+}
+
+async function loadLlmCalls() {
+  const area = document.getElementById('llm-calls-area');
+  try {
+    const calls = await api('GET', '/telemetry/llm-calls?limit=50');
+    if (!calls.length) {
+      area.innerHTML = '<div class="card"><h2>Recent LLM Calls</h2><p class="meta">No LLM calls recorded yet.</p></div>';
+      return;
+    }
+    const rows = calls.map(c => {
+      const statusCls = c.status === 'succeeded' ? 'tag-success' : 'tag-failed';
+      const cost = c.estimated_cost_usd != null ? `$${c.estimated_cost_usd.toFixed(6)}` : '—';
+      return `<tr>
+        <td><span class="tag ${statusCls}">${escHtml(c.status)}</span></td>
+        <td>${escHtml(c.model_name)}</td>
+        <td>${escHtml(c.purpose)}</td>
+        <td>${c.total_tokens != null ? c.total_tokens.toLocaleString() : '—'}</td>
+        <td>${cost}</td>
+        <td>${c.latency_ms != null ? c.latency_ms + ' ms' : '—'}</td>
+        <td class="meta">${escHtml(c.owner_type || '')} ${escHtml(c.owner_id ? c.owner_id.slice(0,8) + '…' : '')}</td>
+        <td class="meta">${fmtDate(c.created_at)}</td>
+      </tr>`;
+    }).join('');
+    area.innerHTML = `
+      <div class="card">
+        <h2>Recent LLM Calls</h2>
+        <div style="overflow-x:auto">
+          <table class="summary-table" style="min-width:700px">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Status</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Model</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Purpose</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Tokens</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Cost</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Latency</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Owner</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">When</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  } catch (err) {
+    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function stat(value, label) {
+  return `
+    <div class="stat-block">
+      <div class="stat-value">${value ?? '—'}</div>
+      <div class="stat-label">${label}</div>
+    </div>`;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadAll();
+</script>
+{% endblock %}
