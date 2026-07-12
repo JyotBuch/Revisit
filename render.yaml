@@ -15,8 +15,7 @@ services:
     runtime: python
     plan: free           # upgrade to "starter" for persistent DB and no spin-down
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 app.main:app
+    startCommand: bash scripts/start.sh
     healthCheckPath: /health
     envVars:
       # Injected automatically from the database below — do not set manually.

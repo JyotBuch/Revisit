@@ -927,9 +927,7 @@ the Render dashboard under **Environment → Environment Variables**:
 
 Click **Deploy**. Render will:
 1. `pip install -r requirements.txt`
-2. Run `alembic upgrade head` as the pre-deploy command (this also enables the
-   pgvector extension via the first migration that uses it)
-3. Start `gunicorn -k uvicorn.workers.UvicornWorker --workers 2 ...`
+2. Run `bash scripts/start.sh`, which runs `alembic upgrade head` then starts gunicorn
 
 ### Verify
 
@@ -947,23 +945,31 @@ https://<your-service>.onrender.com/login
   spin-down takes ~30 seconds.
 - **Postgres free plan** expires after 90 days and the database is deleted.
   Upgrade to the "Starter" plan ($7/month) before the expiry date to retain data.
+- **Pre-deploy commands are not supported on the free tier.** Migrations run
+  at startup inside `scripts/start.sh` instead. This is fine for a
+  single-instance personal deployment — there is no risk of two instances
+  racing to migrate simultaneously. On a paid plan with multiple instances,
+  move `alembic upgrade head` back to a proper pre-deploy step.
 
 ### Railway (alternative)
 
 Railway picks up the `Procfile` automatically:
 
 ```
-web: gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 app.main:app
+web: bash scripts/start.sh
 ```
 
-Provision a Postgres plugin in the Railway dashboard, enable the pgvector
-extension from the Railway query console (`CREATE EXTENSION IF NOT EXISTS vector`),
-then run migrations via the Railway shell: `alembic upgrade head`.
+Provision a Postgres plugin in the Railway dashboard and enable the pgvector
+extension from the Railway query console (`CREATE EXTENSION IF NOT EXISTS vector`).
+Migrations run automatically on first startup via `scripts/start.sh`.
 
 ### Production start command (reference)
 
 ```bash
-gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 app.main:app
+bash scripts/start.sh
+# expands to:
+#   alembic upgrade head
+#   gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:${PORT:-8000} --timeout 120 app.main:app
 ```
 
 `--timeout 120` is required because `POST /jobs/daily-batch` is synchronous

@@ -38,8 +38,8 @@ migrate: ## Apply Alembic migrations to the main database
 dev: ## Start FastAPI with auto-reload (loads .env automatically)
 	$(UVICORN) app.main:app --reload
 
-start: ## Start FastAPI with gunicorn + uvicorn workers (production-style)
-	$(GUNICORN) -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:${PORT:-8000} --timeout 120 app.main:app
+start: ## Run migrations then start gunicorn (mirrors Render production startup)
+	bash scripts/start.sh
 
 test: ## Run the integration test suite against revisit_test
 	$(PYTEST) tests/ -v
