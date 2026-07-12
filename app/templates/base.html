@@ -295,9 +295,13 @@
 
     // Shared helpers
     async function api(method, url, body) {
-      const opts = { method, headers: { 'Content-Type': 'application/json' } };
+      const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
       if (body !== undefined) opts.body = JSON.stringify(body);
       const res = await fetch(url, opts);
+      if (res.status === 401) {
+        window.location.href = '/login';
+        throw new Error('Session expired — redirecting to login');
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
@@ -315,7 +319,7 @@
     }
 
     async function logout() {
-      await fetch('/logout', { method: 'POST' }).catch(() => {});
+      await fetch('/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
       window.location.href = '/login';
     }
   </script>

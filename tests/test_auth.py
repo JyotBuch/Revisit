@@ -186,6 +186,27 @@ def test_logged_in_can_post_captures(monkeypatch, no_redirect_client):
     assert resp.status_code == 201
 
 
+def test_logout_blocks_subsequent_api_calls(monkeypatch, no_redirect_client):
+    """After logout the session token is revoked; POST /captures must return 401."""
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("APP_USERNAME", "admin")
+    monkeypatch.setenv("APP_PASSWORD", "secret")
+
+    no_redirect_client.post("/login", json={"username": "admin", "password": "secret"})
+    assert no_redirect_client.post(
+        "/captures",
+        json={"source_type": "note", "user_note": "pre-logout", "label": "casual"},
+    ).status_code == 201
+
+    no_redirect_client.post("/logout")
+
+    resp = no_redirect_client.post(
+        "/captures",
+        json={"source_type": "note", "user_note": "post-logout", "label": "casual"},
+    )
+    assert resp.status_code == 401
+
+
 def test_logout_clears_session(monkeypatch, no_redirect_client):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("APP_USERNAME", "admin")
