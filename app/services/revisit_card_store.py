@@ -78,15 +78,28 @@ def _build_next_action(capture: Capture) -> str:
     return _NEXT_ACTION_BY_SOURCE_TYPE[capture.source_type]
 
 
+_MAX_EXTRACTED_TEXT_FOR_LLM = 4000
+
+
 def _capture_context_item(capture: Capture) -> Dict[str, Any]:
-    text = capture.user_note or capture.selected_text or capture.extracted_text
-    return {
+    item: Dict[str, Any] = {
         "source_type": capture.source_type.value,
         "label": capture.label.value,
         "title": capture.title,
-        "text": text,
         "url": capture.url,
     }
+    if capture.user_note:
+        item["user_note"] = capture.user_note
+    if capture.selected_text:
+        item["selected_text"] = capture.selected_text
+    if capture.extracted_text:
+        text = capture.extracted_text
+        item["extracted_text"] = (
+            text[:_MAX_EXTRACTED_TEXT_FOR_LLM] + "…"
+            if len(text) > _MAX_EXTRACTED_TEXT_FOR_LLM
+            else text
+        )
+    return item
 
 
 def create_revisit_card_for_capture(
