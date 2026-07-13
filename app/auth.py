@@ -1,10 +1,12 @@
 import os
 import secrets
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
+from sqlalchemy import text
 
 SESSION_COOKIE = "revisit_session"
-_active_sessions: set[str] = set()
+SESSION_TTL_SECONDS = 7 * 24 * 3600
 
 
 class UnauthenticatedUI(Exception):
@@ -15,24 +17,55 @@ def auth_enabled() -> bool:
     return os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 
 
+def _db():
+    from app.db import SessionLocal
+    return SessionLocal()
+
+
 def create_session() -> str:
     token = secrets.token_hex(32)
-    _active_sessions.add(token)
+    expires_at = int(datetime.now(timezone.utc).timestamp()) + SESSION_TTL_SECONDS
+    db = _db()
+    try:
+        db.execute(
+            text("INSERT INTO sessions (token, expires_at) VALUES (:token, :expires_at)"),
+            {"token": token, "expires_at": expires_at},
+        )
+        db.commit()
+    finally:
+        db.close()
     return token
 
 
 def revoke_session(token: str) -> None:
-    _active_sessions.discard(token)
+    if not token:
+        return
+    db = _db()
+    try:
+        db.execute(text("DELETE FROM sessions WHERE token = :token"), {"token": token})
+        db.commit()
+    finally:
+        db.close()
 
 
 def _is_valid(token: str | None) -> bool:
-    return bool(token and token in _active_sessions)
+    if not token:
+        return False
+    now = int(datetime.now(timezone.utc).timestamp())
+    db = _db()
+    try:
+        row = db.execute(
+            text("SELECT 1 FROM sessions WHERE token = :token AND expires_at > :now"),
+            {"token": token, "now": now},
+        ).fetchone()
+        return row is not None
+    finally:
+        db.close()
 
 
 def check_credentials(username: str, password: str) -> bool:
     expected_user = os.environ.get("APP_USERNAME", "")
     expected_pass = os.environ.get("APP_PASSWORD", "")
-    # Reject if APP_USERNAME is not configured — an empty username would match anything.
     return bool(expected_user) and username == expected_user and password == expected_pass
 
 

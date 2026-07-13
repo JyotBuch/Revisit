@@ -35,11 +35,8 @@ def no_redirect_client() -> TestClient:
 
 @pytest.fixture(autouse=True)
 def clear_sessions():
-    """Clear the in-memory session store before/after each test."""
-    from app import auth
-    auth._active_sessions.clear()
+    """Sessions are cleared by the conftest clean_db fixture (truncates sessions table)."""
     yield
-    auth._active_sessions.clear()
 
 
 # ---------------------------------------------------------------------------

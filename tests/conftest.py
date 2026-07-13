@@ -46,6 +46,7 @@ _TABLES_TO_TRUNCATE = [
     "llm_calls",
     "agent_steps",
     "retrieval_events",
+    "sessions",
 ]
 
 
