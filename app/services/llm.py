@@ -10,27 +10,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger("revisit.llm")
 
 DEFAULT_MODEL = "gpt-4o-mini"
-PROMPT_VERSION = "v2"  # v2: adds resource-aware guidance for cluster cards
+PROMPT_VERSION = "v3"  # v3: research_notes-aware; research_notes is primary source when present
 
 _REQUIRED_FIELDS = ("title", "why_saved", "original_context", "next_action")
 _MAX_NEXT_ACTION_LENGTH = 300
 
 _SYSTEM_PROMPT = (
     'You write short "Revisit Cards" that help a user resume a saved topic '
-    "later. You are given capture/cluster context as JSON, and optionally a "
-    '"resources" list of externally retrieved, already-validated supporting '
-    "material. Using ONLY that context, return a JSON object with exactly "
-    "these string fields: title, why_saved, original_context, next_action. "
-    "Do not invent URLs, sources, or facts that are not in the provided "
-    "context or resources. If the provided context is insufficient, be "
-    "explicit rather than inventing details — say so plainly in "
-    "original_context instead of guessing. "
-    "If a resources list is provided, treat it only as supporting context: "
-    "mention a resource only if it's actually relevant to the captures, "
-    "never invent details about a resource beyond its given "
-    "title/snippet/url, and if the resources are weak, generic, or only "
-    "loosely related, say so plainly rather than overstating their "
-    "relevance. Keep next_action concise: one actionable sentence."
+    "later. You are given capture/cluster context as JSON. "
+    "Using ONLY that context, return a JSON object with exactly these string "
+    "fields: title, why_saved, original_context, next_action. "
+    "Do not invent URLs, sources, or facts that are not in the provided context. "
+    "\n\n"
+    "If a 'research_notes' object is present in the context: it was produced "
+    "by a deep research pass and is the PRIMARY basis for original_context and "
+    "next_action. Use research_notes.summary as the core of original_context — "
+    "synthesize it into 2-4 sentences. Draw next_action from "
+    "research_notes.questions_remaining (if any) or research_notes.key_findings. "
+    "Reference specific findings; never contradict them. "
+    "\n\n"
+    "If only a 'resources' list is present (no research_notes): treat it as "
+    "supporting context. Mention a resource only if genuinely relevant; never "
+    "invent details beyond its title/snippet/url. If resources are weak or "
+    "loosely related, say so rather than overstating their relevance. "
+    "\n\n"
+    "If context is thin, be explicit rather than inventing — say so plainly in "
+    "original_context. Keep next_action concise: one actionable sentence."
 )
 
 

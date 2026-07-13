@@ -113,3 +113,110 @@ def test_create_cluster_card_rule_based(client, db):
 def test_create_cluster_card_missing_cluster(client):
     r = client.post("/clusters/no-such-id/revisit-card")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# research_notes parameter
+# ---------------------------------------------------------------------------
+
+def test_create_cluster_card_with_research_notes_in_llm_context(monkeypatch, db):
+    """research_notes get injected into the LLM context dict when present."""
+    from unittest.mock import patch
+    from app.services.research_agent import ResearchNotes
+    from app.services import revisit_card_store
+    from app.models.cluster import ClusterORM, ClusterItemORM
+    from app.models.capture import CaptureORM
+    from app.schemas.revisit_card import GenerationMethod
+    import uuid
+
+    cap = CaptureORM(
+        id=str(uuid.uuid4()),
+        source_type="note",
+        label="return",
+        status="extracted",
+        user_note="Test note",
+    )
+    db.add(cap)
+    db.flush()
+    cluster = ClusterORM(id=str(uuid.uuid4()), title="Test Cluster", status="active")
+    db.add(cluster)
+    db.flush()
+    db.add(ClusterItemORM(id=str(uuid.uuid4()), cluster_id=cluster.id, capture_id=cap.id))
+    db.commit()
+    db.expire_all()
+    from sqlalchemy import select
+    cluster = db.scalar(select(ClusterORM).where(ClusterORM.id == cluster.id))
+
+    notes = ResearchNotes(
+        summary="Deep research summary.",
+        key_findings=["Key fact A.", "Key fact B."],
+        questions_answered=["What?"],
+        questions_remaining=["How?"],
+        sources_used=["https://source.com/1"],
+    )
+
+    captured_context = {}
+
+    def fake_generate(ctx, *, owner_type, owner_id, db=None, job_id=None):
+        captured_context.update(ctx)
+        return {
+            "title": "T",
+            "why_saved": "W",
+            "original_context": "O",
+            "next_action": "N",
+        }
+
+    with patch("app.services.revisit_card_store.llm.generate_revisit_card_content", side_effect=fake_generate):
+        revisit_card_store.create_revisit_card_for_cluster(
+            db, cluster, generation_method=GenerationMethod.llm, research_notes=notes
+        )
+
+    assert "research_notes" in captured_context
+    assert captured_context["research_notes"]["summary"] == "Deep research summary."
+    assert captured_context["research_notes"]["key_findings"] == ["Key fact A.", "Key fact B."]
+
+
+def test_create_cluster_card_without_research_notes_context_unchanged(monkeypatch, db):
+    """When research_notes=None, 'research_notes' key must NOT appear in context."""
+    from unittest.mock import patch
+    from app.services import revisit_card_store
+    from app.models.cluster import ClusterORM, ClusterItemORM
+    from app.models.capture import CaptureORM
+    from app.schemas.revisit_card import GenerationMethod
+    import uuid
+
+    cap = CaptureORM(
+        id=str(uuid.uuid4()),
+        source_type="note",
+        label="return",
+        status="extracted",
+        user_note="Test note",
+    )
+    db.add(cap)
+    db.flush()
+    cluster = ClusterORM(id=str(uuid.uuid4()), title="Test Cluster 2", status="active")
+    db.add(cluster)
+    db.flush()
+    db.add(ClusterItemORM(id=str(uuid.uuid4()), cluster_id=cluster.id, capture_id=cap.id))
+    db.commit()
+    db.expire_all()
+    from sqlalchemy import select
+    cluster = db.scalar(select(ClusterORM).where(ClusterORM.id == cluster.id))
+
+    captured_context = {}
+
+    def fake_generate(ctx, *, owner_type, owner_id, db=None, job_id=None):
+        captured_context.update(ctx)
+        return {
+            "title": "T",
+            "why_saved": "W",
+            "original_context": "O",
+            "next_action": "N",
+        }
+
+    with patch("app.services.revisit_card_store.llm.generate_revisit_card_content", side_effect=fake_generate):
+        revisit_card_store.create_revisit_card_for_cluster(
+            db, cluster, generation_method=GenerationMethod.llm, research_notes=None
+        )
+
+    assert "research_notes" not in captured_context

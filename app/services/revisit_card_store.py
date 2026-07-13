@@ -1,6 +1,9 @@
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from app.services.research_agent import ResearchNotes
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -236,6 +239,7 @@ def create_revisit_card_for_cluster(
     generation_method: GenerationMethod = GenerationMethod.rule_based,
     include_resources: bool = True,
     job_id: Optional[str] = None,
+    research_notes: Optional["ResearchNotes"] = None,
 ) -> RevisitCard:
     captures = [
         Capture.model_validate(item.capture, from_attributes=True)
@@ -252,7 +256,7 @@ def create_revisit_card_for_cluster(
     title = why_saved = original_context = next_action = None
 
     if generation_method == GenerationMethod.llm:
-        context = {
+        context: Dict[str, Any] = {
             "card_kind": "cluster",
             "cluster_title": cluster.title,
             "captures": [
@@ -261,6 +265,14 @@ def create_revisit_card_for_cluster(
         }
         if top_resources:
             context["resources"] = [_resource_context_item(r) for r in top_resources]
+        if research_notes is not None:
+            context["research_notes"] = {
+                "summary": research_notes.summary,
+                "key_findings": research_notes.key_findings,
+                "questions_answered": research_notes.questions_answered,
+                "questions_remaining": research_notes.questions_remaining,
+                "sources_used": research_notes.sources_used,
+            }
         result = llm.generate_revisit_card_content(
             context, owner_type="cluster", owner_id=cluster.id, db=db, job_id=job_id
         )

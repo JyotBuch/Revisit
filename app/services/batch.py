@@ -146,33 +146,79 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
 
         clusters = clustering.list_clusters(db)
 
+        from app.services import research_agent as ra
+
         resources_retrieved = 0
         resources_accepted = 0
+        research_notes_by_cluster: dict = {}
+
         for cluster in clusters:
-            step = telemetry.start_agent_step(
-                db,
-                job_id=job.id,
-                step_name="retrieve_resources",
-                owner_type="cluster",
-                owner_id=cluster.id,
-                input_summary={"limit": DEFAULT_RESOURCE_LIMIT_PER_CLUSTER},
-            )
-            retrieval_summary = retrieval.retrieve_and_store_resources_for_cluster(
-                db, cluster.id, limit=DEFAULT_RESOURCE_LIMIT_PER_CLUSTER, job_id=job.id
-            )
-            if retrieval_summary is not None:
-                resources_retrieved += retrieval_summary.resources_retrieved
-                resources_accepted += retrieval_summary.resources_accepted
-                telemetry.complete_agent_step(
+            if method == GenerationMethod.llm:
+                step = telemetry.start_agent_step(
                     db,
-                    step.id,
-                    output_summary={
-                        "num_retrieved": retrieval_summary.resources_retrieved,
-                        "num_accepted": retrieval_summary.resources_accepted,
+                    job_id=job.id,
+                    step_name="research_agent",
+                    owner_type="cluster",
+                    owner_id=cluster.id,
+                    input_summary={
+                        "cluster_title": cluster.title,
+                        "limit": DEFAULT_RESOURCE_LIMIT_PER_CLUSTER,
                     },
                 )
+                notes = ra.run_research(
+                    db, cluster, job_id=job.id, limit=DEFAULT_RESOURCE_LIMIT_PER_CLUSTER
+                )
+                if notes is not None:
+                    resources_retrieved += len(notes.sources_used)
+                    resources_accepted += len(notes.sources_used)
+                    telemetry.complete_agent_step(
+                        db,
+                        step.id,
+                        output_summary={
+                            "iterations_used": notes.iterations_used,
+                            "sources_read": len(notes.sources_used),
+                            "model": notes.model,
+                        },
+                    )
+                    research_notes_by_cluster[cluster.id] = notes
+                else:
+                    # Agent unavailable or timed out — fall back to single-search retrieval
+                    telemetry.fail_agent_step(
+                        db, step.id, error="research_agent_unavailable_or_incomplete"
+                    )
+                    retrieval_summary = retrieval.retrieve_and_store_resources_for_cluster(
+                        db, cluster.id, limit=DEFAULT_RESOURCE_LIMIT_PER_CLUSTER, job_id=job.id
+                    )
+                    if retrieval_summary is not None:
+                        resources_retrieved += retrieval_summary.resources_retrieved
+                        resources_accepted += retrieval_summary.resources_accepted
+                    research_notes_by_cluster[cluster.id] = None
             else:
-                telemetry.fail_agent_step(db, step.id, error="cluster_not_found")
+                step = telemetry.start_agent_step(
+                    db,
+                    job_id=job.id,
+                    step_name="retrieve_resources",
+                    owner_type="cluster",
+                    owner_id=cluster.id,
+                    input_summary={"limit": DEFAULT_RESOURCE_LIMIT_PER_CLUSTER},
+                )
+                retrieval_summary = retrieval.retrieve_and_store_resources_for_cluster(
+                    db, cluster.id, limit=DEFAULT_RESOURCE_LIMIT_PER_CLUSTER, job_id=job.id
+                )
+                if retrieval_summary is not None:
+                    resources_retrieved += retrieval_summary.resources_retrieved
+                    resources_accepted += retrieval_summary.resources_accepted
+                    telemetry.complete_agent_step(
+                        db,
+                        step.id,
+                        output_summary={
+                            "num_retrieved": retrieval_summary.resources_retrieved,
+                            "num_accepted": retrieval_summary.resources_accepted,
+                        },
+                    )
+                else:
+                    telemetry.fail_agent_step(db, step.id, error="cluster_not_found")
+                research_notes_by_cluster[cluster.id] = None
             db.commit()
 
         cards_created = 0
@@ -202,7 +248,12 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
             )
             try:
                 card = revisit_card_store.create_revisit_card_for_cluster(
-                    db, cluster, generation_method=method, include_resources=True, job_id=job.id
+                    db,
+                    cluster,
+                    generation_method=method,
+                    include_resources=True,
+                    job_id=job.id,
+                    research_notes=research_notes_by_cluster.get(cluster.id),
                 )
                 cards_created += 1
                 has_resources = bool(resource_store.list_resources_for_card(db, card.id))
@@ -222,6 +273,9 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
             db.commit()
 
         summary: Dict[str, Any] = {
+            "research_agent_runs": sum(
+                1 for v in research_notes_by_cluster.values() if v is not None
+            ),
             "captures_considered": captures_considered,
             "captures_extracted": captures_extracted,
             "extraction_failures": extraction_failures,
