@@ -90,6 +90,40 @@ def generate_revisit_card_content(
         model=model,
     )
 
+    from app.services.langfuse_client import get_langfuse
+
+    lf = get_langfuse()
+    lf_trace = None
+    lf_gen = None
+    _messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(input_context)},
+    ]
+    if lf is not None:
+        try:
+            # v4 SDK: use start_observation(as_type=...) — no .trace() or .generation()
+            lf_trace = lf.start_observation(
+                name="revisit-card-generation",
+                as_type="agent",
+                input=_messages,
+                metadata={
+                    "owner_type": owner_type,
+                    "owner_id": owner_id,
+                    "prompt_version": PROMPT_VERSION,
+                    "job_id": job_id,
+                },
+            )
+            lf_gen = lf_trace.start_observation(
+                name="card-llm-call",
+                as_type="generation",
+                model=model,
+                model_parameters={"response_format": "json_object"},
+                input=_messages,
+            )
+        except Exception:
+            lf_trace = None
+            lf_gen = None
+
     latency_ms: Optional[int] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
@@ -103,10 +137,7 @@ def generate_revisit_card_content(
         response = client.chat.completions.create(
             model=model,
             response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(input_context)},
-            ],
+            messages=_messages,
         )
         latency_ms = int((time.monotonic() - start) * 1000)
 
@@ -128,6 +159,14 @@ def generate_revisit_card_content(
             model=model,
             failure_type=failure_type,
         )
+        if lf_gen is not None:
+            try:
+                lf_gen.update(level="ERROR", status_message=str(exc))
+                lf_gen.end()
+                lf_trace.end()  # type: ignore[union-attr]
+                lf.flush()  # type: ignore[union-attr]
+            except Exception:
+                pass
         if db is not None:
             _record(
                 db,
@@ -150,6 +189,19 @@ def generate_revisit_card_content(
             model=model,
             failure_type="ValidationError",
         )
+        if lf_gen is not None:
+            try:
+                lf_gen.update(
+                    output=response.choices[0].message.content,
+                    level="WARNING",
+                    status_message="ValidationError",
+                    usage_details={"input": input_tokens, "output": output_tokens, "total": total_tokens_} if input_tokens else None,
+                )
+                lf_gen.end()
+                lf_trace.end()  # type: ignore[union-attr]
+                lf.flush()  # type: ignore[union-attr]
+            except Exception:
+                pass
         if db is not None:
             _record(
                 db,
@@ -172,6 +224,17 @@ def generate_revisit_card_content(
         owner_id=owner_id,
         model=model,
     )
+    if lf_gen is not None:
+        try:
+            lf_gen.update(
+                output=response.choices[0].message.content,
+                usage_details={"input": input_tokens, "output": output_tokens, "total": total_tokens_} if input_tokens else None,
+            )
+            lf_gen.end()
+            lf_trace.end()  # type: ignore[union-attr]
+            lf.flush()  # type: ignore[union-attr]
+        except Exception:
+            pass
     if db is not None:
         _record(
             db,

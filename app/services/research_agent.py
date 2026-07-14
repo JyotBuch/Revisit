@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from app.models.cluster import ClusterORM
 from app.schemas.resource import Resource, ResourceCandidate
 from app.services import resource_store, telemetry
+from app.services.langfuse_client import get_langfuse
 from app.services.retrieval import _get_api_key, _tavily_search
 
 logger = logging.getLogger("revisit.research_agent")
@@ -429,6 +430,27 @@ def run_research(
         {"role": "user", "content": _build_initial_message(cluster)},
     ]
 
+    lf = get_langfuse()
+    lf_trace = None
+    if lf is not None:
+        try:
+            # v4 SDK: use start_observation(as_type="agent") for top-level trace
+            lf_trace = lf.start_observation(
+                name="research-agent",
+                as_type="agent",
+                input={
+                    "cluster_id": cluster.id,
+                    "cluster_title": cluster.title,
+                    "job_id": job_id,
+                },
+                metadata={
+                    "model": model,
+                    "max_iterations": max_iterations,
+                },
+            )
+        except Exception:
+            lf_trace = None
+
     url_metadata: Dict[str, Dict[str, str]] = {}
     finish_result: Optional[Dict[str, Any]] = None
     iterations_used = 0
@@ -436,6 +458,19 @@ def run_research(
     for iteration in range(max_iterations):
         iterations_used = iteration + 1
         start = time.monotonic()
+
+        lf_gen = None
+        if lf_trace is not None:
+            try:
+                lf_gen = lf_trace.start_observation(
+                    name=f"llm-call-{iteration + 1}",
+                    as_type="generation",
+                    model=model,
+                    model_parameters={"tool_choice": "auto"},
+                    input=messages,
+                )
+            except Exception:
+                lf_gen = None
 
         try:
             response = client.chat.completions.create(
@@ -452,6 +487,12 @@ def run_research(
                 status="failed",
                 failure_type=type(exc).__name__,
             )
+            if lf_gen is not None:
+                try:
+                    lf_gen.update(level="ERROR", status_message=str(exc))
+                    lf_gen.end()
+                except Exception:
+                    pass
             logger.warning(
                 "research_agent_llm_error cluster_id=%s iteration=%d error=%s",
                 cluster.id, iteration, exc,
@@ -468,6 +509,19 @@ def run_research(
             latency_ms=latency_ms,
             status="succeeded",
         )
+        if lf_gen is not None:
+            try:
+                lf_gen.update(
+                    output=response.choices[0].message.content,
+                    usage_details={
+                        "input": usage.prompt_tokens,
+                        "output": usage.completion_tokens,
+                        "total": usage.total_tokens,
+                    } if usage else None,
+                )
+                lf_gen.end()
+            except Exception:
+                pass
 
         assistant_msg = response.choices[0].message
 
@@ -512,6 +566,16 @@ def run_research(
             if fn_name == "search_web":
                 query = args.get("query", "")
                 max_r = min(max(int(args.get("max_results", _DEFAULT_SEARCH_RESULTS)), 1), 10)
+                lf_span = None
+                if lf_trace is not None:
+                    try:
+                        lf_span = lf_trace.start_observation(
+                            name="search_web",
+                            as_type="retriever",
+                            input={"query": query, "max_results": max_r},
+                        )
+                    except Exception:
+                        pass
                 t0 = time.monotonic()
                 result = _execute_search_web(query, max_r)
                 search_latency = int((time.monotonic() - t0) * 1000)
@@ -526,6 +590,15 @@ def run_research(
                     num_results=len(result.get("results", [])),
                     latency_ms=search_latency,
                 )
+                if lf_span is not None:
+                    try:
+                        lf_span.update(output={
+                            "num_results": len(result.get("results", [])),
+                            "error": result.get("error"),
+                        })
+                        lf_span.end()
+                    except Exception:
+                        pass
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -534,8 +607,27 @@ def run_research(
 
             elif fn_name == "read_article":
                 url = args.get("url", "")
+                lf_span = None
+                if lf_trace is not None:
+                    try:
+                        lf_span = lf_trace.start_observation(
+                            name="read_article",
+                            as_type="tool",
+                            input={"url": url},
+                        )
+                    except Exception:
+                        pass
                 read_result = _execute_read_article(url)
                 _store_resource_from_read(db, cluster.id, url, url_metadata, read_result)
+                if lf_span is not None:
+                    try:
+                        lf_span.update(output={
+                            "chars_extracted": len(read_result.get("content", "")),
+                            "error": read_result.get("error"),
+                        })
+                        lf_span.end()
+                    except Exception:
+                        pass
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -566,9 +658,19 @@ def run_research(
             "research_agent_no_finish cluster_id=%s iterations_used=%d",
             cluster.id, iterations_used,
         )
+        if lf_trace is not None:
+            try:
+                lf_trace.update(
+                    output={"status": "no_finish_called", "iterations_used": iterations_used},
+                    level="WARNING",
+                )
+                lf_trace.end()
+                lf.flush()  # type: ignore[union-attr]
+            except Exception:
+                pass
         return None
 
-    return ResearchNotes(
+    notes = ResearchNotes(
         summary=finish_result.get("summary", ""),
         key_findings=finish_result.get("key_findings", []),
         questions_answered=finish_result.get("questions_answered", []),
@@ -577,3 +679,16 @@ def run_research(
         iterations_used=iterations_used,
         model=model,
     )
+    if lf_trace is not None:
+        try:
+            lf_trace.update(output={
+                "summary": notes.summary[:500],
+                "key_findings_count": len(notes.key_findings),
+                "sources_used": notes.sources_used,
+                "iterations_used": iterations_used,
+            })
+            lf_trace.end()
+            lf.flush()  # type: ignore[union-attr]
+        except Exception:
+            pass
+    return notes
