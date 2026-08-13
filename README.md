@@ -95,7 +95,9 @@ The resulting notes feed directly into the Revisit Card. Each article the agent 
 
 ## Deployment (Render)
 
-The simplest path: **Render web service + Render managed Postgres**.
+The checked-in Blueprint is a **free testing deployment**: one Render web
+service and one temporary Render Postgres database. `Run now` executes research
+in the web process; it does not provision a paid worker or nightly scheduler.
 
 **1.** Push this repo to GitHub.
 
@@ -105,14 +107,21 @@ The simplest path: **Render web service + Render managed Postgres**.
 
 | Variable | What it is |
 |---|---|
-| `APP_USERNAME` | Your login username |
-| `APP_PASSWORD` | A strong password |
-| `OPENAI_API_KEY` | For embeddings and LLM card generation |
-| `TAVILY_API_KEY` | For web search in the research agent |
+| `GOOGLE_WEB_CLIENT_ID` | Web OAuth client ID |
+| `GOOGLE_WEB_CLIENT_SECRET` | Web OAuth client secret |
+| `GOOGLE_WEB_REDIRECT_URI` | Exact deployed OAuth callback URL |
+| `GOOGLE_EXTENSION_CLIENT_ID` | Chrome-extension OAuth client ID |
+| `ALLOWED_EXTENSION_ORIGINS` | `chrome-extension://` plus the extension ID |
+| `OPENAI_API_KEY` | Newsletter synthesis |
+| `TAVILY_API_KEY` | Newsletter source search |
 
 **4.** Deploy. Migrations run automatically on startup.
 
-**Free tier note:** The web service spins down after 15 minutes idle (first request after spin-down takes ~30s). The free Postgres plan expires after 90 days — upgrade to Starter ($7/month) before then.
+**Free tier limitations:** the web service spins down after inactivity, an
+in-process research task can be interrupted by a restart, there is no automatic
+nightly run, the database has no backups, and free Postgres expires after 30
+days. Upgrade to the dedicated `app.worker` plus `app.scheduler` architecture
+before inviting beta users or storing important data.
 
 **Alternative:** Railway picks up the `Procfile` automatically. Provision a Postgres plugin and enable `pgvector` from the Railway query console.
 
@@ -122,12 +131,14 @@ The simplest path: **Render web service + Render managed Postgres**.
 
 Auth is **off by default** so local dev needs no credentials.
 
-To protect a deployed instance, set:
+Production uses Google OAuth. Username/password login remains a local-development
+fallback only. At minimum, configure:
 
 ```bash
 AUTH_ENABLED=true
-APP_USERNAME=your_username
-APP_PASSWORD=a_strong_password
+GOOGLE_WEB_CLIENT_ID=...
+GOOGLE_WEB_CLIENT_SECRET=...
+GOOGLE_WEB_REDIRECT_URI=https://your-host/api/v1/auth/google/callback
 ```
 
 Sessions persist across restarts (stored in the database). Sessions expire after 7 days.

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +27,7 @@ from app.schemas.job import JobRead, JobStatus, JobType
 from app.schemas.newsletter import NewsletterRead
 from app.schemas.revisit_card import RevisitCardRead
 from app.services import resource_store
+from app.services.inline_research import run_inline_research_job
 
 router = APIRouter(prefix="/api/v1", tags=["public-api"])
 
@@ -195,17 +196,22 @@ def get_newsletter(
 
 @router.post("/jobs/research", response_model=JobRead, status_code=202)
 def enqueue_research(
+    background_tasks: BackgroundTasks,
     user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db)
 ) -> JobRead:
     active = db.scalar(select(JobORM).where(
         JobORM.user_id == user.id, JobORM.status.in_([JobStatus.queued, JobStatus.running])
     ))
     if active:
+        if os.environ.get("INLINE_RESEARCH_JOBS", "false").lower() == "true" and active.status == JobStatus.queued:
+            background_tasks.add_task(run_inline_research_job, active.id, user.id)
         return JobRead.model_validate(active, from_attributes=True)
     row = JobORM(id=str(uuid.uuid4()), user_id=user.id, job_type=JobType.daily_batch, status=JobStatus.queued)
     db.add(row)
     db.commit()
     db.refresh(row)
+    if os.environ.get("INLINE_RESEARCH_JOBS", "false").lower() == "true":
+        background_tasks.add_task(run_inline_research_job, row.id, user.id)
     return JobRead.model_validate(row, from_attributes=True)
 
 

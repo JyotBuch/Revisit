@@ -9,6 +9,7 @@ from app.schemas.capture import CaptureLabel, SourceType
 from app.schemas.job import JobStatus, JobType
 from app.services.newsletter import run_newsletter_batch
 from app.services.newsletter import _safe_web_url
+from app.services.inline_research import run_inline_research_job
 
 
 def make_user(db, email="reader@example.com"):
@@ -80,3 +81,25 @@ def test_public_capture_rejects_non_web_url(client, db):
     })
     assert response.status_code == 422
     app.dependency_overrides.pop(auth.current_user, None)
+
+
+def test_inline_free_tier_job_creates_newsletter(db, monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("SEARCH_API_KEY", raising=False)
+    user = make_user(db)
+    capture = CaptureORM(
+        id=str(uuid.uuid4()), user_id=user.id, source_type=SourceType.passage,
+        selected_text="research inline", title="Inline", label=CaptureLabel.return_,
+    )
+    job = JobORM(
+        id=str(uuid.uuid4()), user_id=user.id, job_type=JobType.daily_batch,
+        status=JobStatus.queued,
+    )
+    db.add_all([capture, job])
+    db.commit()
+
+    run_inline_research_job(job.id, user.id)
+
+    db.expire_all()
+    assert db.get(JobORM, job.id).status == JobStatus.succeeded
+    assert db.get(JobORM, job.id).summary_json["newsletter_created"] is True
