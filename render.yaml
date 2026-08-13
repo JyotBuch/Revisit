@@ -1,22 +1,20 @@
-## Render Blueprint — deploys the Revisit FastAPI app + managed Postgres.
+## Free testing Blueprint — FastAPI + temporary managed Postgres.
 ## https://render.com/docs/blueprint-spec
 ##
 ## Usage:
 ##   1. Push this repo to GitHub.
 ##   2. In the Render dashboard → New → Blueprint → select this repo.
 ##   3. Set the secret env vars marked `sync: false` in the dashboard
-##      (APP_USERNAME, APP_PASSWORD, OPENAI_API_KEY, and optionally
-##      TAVILY_API_KEY).
+##      (Google OAuth, extension origin, OPENAI_API_KEY, and TAVILY_API_KEY).
 ##   4. Deploy — startup runs `alembic upgrade head` then starts gunicorn.
 
 services:
   - type: web
     name: revisit
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 app.main:app
+    startCommand: bash scripts/start.sh
     healthCheckPath: /health
     envVars:
       # Injected automatically from the database below — do not set manually.
@@ -34,10 +32,6 @@ services:
         value: "*.onrender.com"
       - key: ALLOWED_EXTENSION_ORIGINS
         sync: false
-      - key: APP_USERNAME
-        sync: false   # set in Render dashboard
-      - key: APP_PASSWORD
-        sync: false   # set in Render dashboard
       - key: GOOGLE_WEB_CLIENT_ID
         sync: false
       - key: GOOGLE_WEB_CLIENT_SECRET
@@ -46,6 +40,10 @@ services:
         sync: false
       - key: GOOGLE_EXTENSION_CLIENT_ID
         sync: false
+      # Free-tier testing: process Run now tasks after the HTTP response.
+      # This is not durable across process restarts; use app.worker in production.
+      - key: INLINE_RESEARCH_JOBS
+        value: true
 
       # OpenAI — optional; embeddings + LLM card generation fall back to
       # rule-based/fake if unset.
@@ -65,41 +63,8 @@ services:
       - key: PYTHON_VERSION
         value: "3.12.0"
 
-  - type: worker
-    name: revisit-worker
-    runtime: python
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.worker
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: revisit-db
-          property: connectionString
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: TAVILY_API_KEY
-        sync: false
-      - key: SEARCH_PROVIDER
-        value: tavily
-      - key: DEFAULT_GENERATION_METHOD
-        value: llm
-
-  - type: cron
-    name: revisit-nightly-scheduler
-    runtime: python
-    plan: starter
-    schedule: "0 * * * *"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.scheduler
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: revisit-db
-          property: connectionString
-
 databases:
   - name: revisit-db
     databaseName: revisit
     user: revisit
-    plan: basic-256mb
+    plan: free
