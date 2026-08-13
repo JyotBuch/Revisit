@@ -11,6 +11,7 @@ class JobType(str, Enum):
 
 
 class JobStatus(str, Enum):
+    queued = "queued"
     running = "running"
     succeeded = "succeeded"
     failed = "failed"

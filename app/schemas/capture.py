@@ -34,6 +34,10 @@ class CaptureCreate(BaseModel):
     selected_text: Optional[str] = None
     user_note: Optional[str] = None
     label: CaptureLabel
+    domain: Optional[str] = None
+    description: Optional[str] = None
+    author: Optional[str] = None
+    captured_at: Optional[datetime] = None
 
     @model_validator(mode="after")
     def require_some_content(self) -> "CaptureCreate":
@@ -51,6 +55,10 @@ class CaptureRead(BaseModel):
     title: Optional[str] = None
     selected_text: Optional[str] = None
     user_note: Optional[str] = None
+    domain: Optional[str] = None
+    description: Optional[str] = None
+    author: Optional[str] = None
+    captured_at: Optional[datetime] = None
     label: CaptureLabel
     status: CaptureStatus
     extracted_text: Optional[str] = None
@@ -61,11 +69,16 @@ class CaptureRead(BaseModel):
 
 class Capture(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: Optional[str] = None
     source_type: SourceType
     url: Optional[str] = None
     title: Optional[str] = None
     selected_text: Optional[str] = None
     user_note: Optional[str] = None
+    domain: Optional[str] = None
+    description: Optional[str] = None
+    author: Optional[str] = None
+    captured_at: Optional[datetime] = None
     label: CaptureLabel
     status: CaptureStatus = CaptureStatus.saved
     extracted_text: Optional[str] = None

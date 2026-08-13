@@ -120,6 +120,10 @@
     <div class="brand">Revisit</div>
     <div class="tagline">Sign in to your personal research pipeline</div>
 
+    {% if google_enabled %}
+    <a class="btn" style="text-decoration:none;text-align:center" href="/api/v1/auth/google/login">Continue with Google</a>
+    {% endif %}
+    {% if legacy_enabled %}
     <form id="login-form">
       <label for="username">Username</label>
       <input id="username" type="text" name="username" autocomplete="username" autofocus required />
@@ -131,10 +135,12 @@
 
       <button class="btn" type="submit" id="submit-btn">Sign in</button>
     </form>
+    {% endif %}
   </div>
 
   <script>
     const form = document.getElementById('login-form');
+    if (form) {
     const errorEl = document.getElementById('error');
     const submitBtn = document.getElementById('submit-btn');
 
@@ -168,6 +174,7 @@
         submitBtn.textContent = 'Sign in';
       }
     });
+    }
   </script>
 </body>
 </html>

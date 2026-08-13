@@ -2,17 +2,17 @@
 
 You save things with the intention of returning to them. You rarely do.
 
-Revisit is a personal capture pipeline that handles the gap between "I should come back to this" and actually coming back to it. Save articles, passages, videos, or notes throughout the day. Each night a background job clusters everything you've saved, runs a research pass on the topics worth returning to, and files structured **Revisit Cards** into your backlog — so when you sit down with time to think, you're not starting cold.
+Revisit is a capture-to-research newsletter. Select text on any webpage and choose **Research** or **Capture**. Revisit records the passage and page context without requiring a form; research selections become a sourced nightly briefing, while capture-only selections stay in your library.
 
 ---
 
 ## How it works
 
-**1. Capture** — Save anything from your browser (extension or paste-in UI) in two seconds. Every capture is tagged `return` (worth researching) or `casual` (worth skimming, not deep-diving). You can add a note to give future-you context.
+**1. Capture** — Select text in Chrome. An inline `Research | Capture` bubble records the passage, URL, page title, domain, and available metadata. Notes are optional.
 
-**2. Research** — A nightly batch job picks up your `return` captures. For each topic cluster it finds, an AI agent runs multiple targeted web searches, reads full articles, and synthesizes what it found into structured notes: key findings, questions answered, questions remaining, sources read.
+**2. Research** — A queued nightly job independently researches each new `Research` selection using web sources and produces a concise synthesis and follow-up question. Embeddings and clustering are intentionally not part of the production path.
 
-**3. Backlog** — Each cluster becomes a Revisit Card: a single page with the original context, the agent's research notes, and a concrete next action. When you have 20 minutes to think, open the backlog and pick up wherever a card left off.
+**3. Newsletter** — The web app presents each dated issue with the original selections, research summaries, sources, and prompts to keep thinking. Users can also request an immediate issue with **Run now**.
 
 ---
 
@@ -147,7 +147,7 @@ Tests hit a real Postgres database. Fake embeddings are used (no API key needed)
 
 ## Browser extension
 
-A Manifest V3 Chrome extension lives in `extension/` — install it unpacked from `chrome://extensions` (Developer mode → Load unpacked). It adds a hotkey and a context-menu option to save the current page or selected text directly to your Revisit backend. Configure the backend URL and API key in the extension's options page.
+A Manifest V3 Chrome extension lives in `extension/`. Install it unpacked from `chrome://extensions` during development. Selecting text opens the inline `Research | Capture` bubble; popup, hotkey, and context-menu flows are included as fallbacks. Configure the production backend and Chrome OAuth client as described in `extension/README.md`.
 
 ---
 

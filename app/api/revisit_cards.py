@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth import require_auth
+from app.auth import require_auth, require_legacy_pipeline_disabled_in_production
+from app.models.user import UserORM
 from app.db import get_db
 from app.schemas.resource import ResourceRead
 from app.schemas.revisit_card import GenerationMethod, RevisitCard, RevisitCardRead
 from app.services import capture_store, clustering, resource_store, revisit_card_store
 
-router = APIRouter(tags=["revisit-cards"])
+router = APIRouter(tags=["revisit-cards"], dependencies=[Depends(require_legacy_pipeline_disabled_in_production)])
 
 
 def _to_card_read(db: Session, card: RevisitCard) -> RevisitCardRead:
@@ -27,9 +28,9 @@ def create_revisit_card(
     capture_id: str,
     generation_method: GenerationMethod = Query(default=GenerationMethod.rule_based),
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> RevisitCardRead:
-    capture = capture_store.get_capture(db, capture_id)
+    capture = capture_store.get_capture(db, capture_id, user_id=user.id if user else None)
     if capture is None:
         raise HTTPException(status_code=404, detail="Capture not found")
     card = revisit_card_store.create_revisit_card_for_capture(
@@ -48,9 +49,9 @@ def create_cluster_revisit_card(
     generation_method: GenerationMethod = Query(default=GenerationMethod.rule_based),
     include_resources: bool = Query(default=True),
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> RevisitCardRead:
-    cluster = clustering.get_cluster(db, cluster_id)
+    cluster = clustering.get_cluster(db, cluster_id, user_id=user.id if user else None)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found")
     if not cluster.items:
@@ -63,13 +64,13 @@ def create_cluster_revisit_card(
 
 
 @router.get("/revisit-cards", response_model=list[RevisitCardRead])
-def list_revisit_cards(db: Session = Depends(get_db)) -> list[RevisitCardRead]:
-    return [_to_card_read(db, c) for c in revisit_card_store.list_revisit_cards(db)]
+def list_revisit_cards(db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> list[RevisitCardRead]:
+    return [_to_card_read(db, c) for c in revisit_card_store.list_revisit_cards(db, user_id=user.id if user else None)]
 
 
 @router.get("/revisit-cards/{card_id}", response_model=RevisitCardRead)
-def get_revisit_card(card_id: str, db: Session = Depends(get_db)) -> RevisitCardRead:
-    card = revisit_card_store.get_revisit_card(db, card_id)
+def get_revisit_card(card_id: str, db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> RevisitCardRead:
+    card = revisit_card_store.get_revisit_card(db, card_id, user_id=user.id if user else None)
     if card is None:
         raise HTTPException(status_code=404, detail="Revisit Card not found")
     return _to_card_read(db, card)

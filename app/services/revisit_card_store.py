@@ -141,6 +141,7 @@ def create_revisit_card_for_capture(
 
     row = RevisitCardORM(
         id=str(uuid.uuid4()),
+        user_id=getattr(capture, "user_id", None),
         capture_id=capture.id,
         card_type=CardType.individual,
         generation_method=actual_method,
@@ -302,6 +303,7 @@ def create_revisit_card_for_cluster(
 
     row = RevisitCardORM(
         id=str(uuid.uuid4()),
+        user_id=cluster.user_id,
         cluster_id=cluster.id,
         card_type=CardType.cluster,
         generation_method=actual_method,
@@ -334,13 +336,19 @@ def get_latest_card_for_cluster(db: Session, cluster_id: str) -> Optional[Revisi
     return RevisitCard.model_validate(row, from_attributes=True)
 
 
-def list_revisit_cards(db: Session) -> List[RevisitCard]:
-    rows = db.scalars(select(RevisitCardORM)).all()
+def list_revisit_cards(db: Session, user_id: str | None = None) -> List[RevisitCard]:
+    query = select(RevisitCardORM)
+    if user_id is not None:
+        query = query.where(RevisitCardORM.user_id == user_id)
+    rows = db.scalars(query).all()
     return [RevisitCard.model_validate(row, from_attributes=True) for row in rows]
 
 
-def get_revisit_card(db: Session, card_id: str) -> Optional[RevisitCard]:
-    row = db.get(RevisitCardORM, card_id)
+def get_revisit_card(db: Session, card_id: str, user_id: str | None = None) -> Optional[RevisitCard]:
+    query = select(RevisitCardORM).where(RevisitCardORM.id == card_id)
+    if user_id is not None:
+        query = query.where(RevisitCardORM.user_id == user_id)
+    row = db.scalar(query)
     if row is None:
         return None
     return RevisitCard.model_validate(row, from_attributes=True)

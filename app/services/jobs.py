@@ -9,8 +9,8 @@ from app.models.job import JobORM
 from app.schemas.job import Job, JobStatus, JobType
 
 
-def start_job(db: Session, job_type: JobType) -> Job:
-    row = JobORM(id=str(uuid.uuid4()), job_type=job_type, status=JobStatus.running)
+def start_job(db: Session, job_type: JobType, user_id: str | None = None) -> Job:
+    row = JobORM(id=str(uuid.uuid4()), user_id=user_id, job_type=job_type, status=JobStatus.running)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -41,13 +41,19 @@ def fail_job(db: Session, job_id: str, error: str) -> Optional[Job]:
     return Job.model_validate(row, from_attributes=True)
 
 
-def list_jobs(db: Session) -> List[Job]:
-    rows = db.scalars(select(JobORM).order_by(JobORM.started_at.desc())).all()
+def list_jobs(db: Session, user_id: str | None = None) -> List[Job]:
+    query = select(JobORM)
+    if user_id is not None:
+        query = query.where(JobORM.user_id == user_id)
+    rows = db.scalars(query.order_by(JobORM.started_at.desc())).all()
     return [Job.model_validate(row, from_attributes=True) for row in rows]
 
 
-def get_job(db: Session, job_id: str) -> Optional[Job]:
-    row = db.get(JobORM, job_id)
+def get_job(db: Session, job_id: str, user_id: str | None = None) -> Optional[Job]:
+    query = select(JobORM).where(JobORM.id == job_id)
+    if user_id is not None:
+        query = query.where(JobORM.user_id == user_id)
+    row = db.scalar(query)
     if row is None:
         return None
     return Job.model_validate(row, from_attributes=True)

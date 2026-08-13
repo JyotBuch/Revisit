@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import require_auth
+from app.auth import require_auth, require_legacy_pipeline_disabled_in_production
+from app.models.user import UserORM
 from app.db import get_db
 from app.schemas.feedback import (
     FeedbackSummary,
@@ -10,7 +11,7 @@ from app.schemas.feedback import (
 )
 from app.services import feedback_store, revisit_card_store
 
-router = APIRouter(tags=["feedback"])
+router = APIRouter(tags=["feedback"], dependencies=[Depends(require_legacy_pipeline_disabled_in_production)])
 
 
 @router.post(
@@ -22,9 +23,9 @@ def create_feedback(
     card_id: str,
     feedback: RevisitCardFeedbackCreate,
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> RevisitCardFeedbackRead:
-    card = revisit_card_store.get_revisit_card(db, card_id)
+    card = revisit_card_store.get_revisit_card(db, card_id, user_id=user.id if user else None)
     if card is None:
         raise HTTPException(status_code=404, detail="Revisit Card not found")
 
@@ -36,8 +37,8 @@ def create_feedback(
     "/revisit-cards/{card_id}/feedback",
     response_model=list[RevisitCardFeedbackRead],
 )
-def list_feedback(card_id: str, db: Session = Depends(get_db)) -> list[RevisitCardFeedbackRead]:
-    card = revisit_card_store.get_revisit_card(db, card_id)
+def list_feedback(card_id: str, db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> list[RevisitCardFeedbackRead]:
+    card = revisit_card_store.get_revisit_card(db, card_id, user_id=user.id if user else None)
     if card is None:
         raise HTTPException(status_code=404, detail="Revisit Card not found")
 
@@ -48,5 +49,5 @@ def list_feedback(card_id: str, db: Session = Depends(get_db)) -> list[RevisitCa
 
 
 @router.get("/feedback/summary", response_model=FeedbackSummary)
-def feedback_summary(db: Session = Depends(get_db)) -> FeedbackSummary:
+def feedback_summary(db: Session = Depends(get_db), _: UserORM | None = Depends(require_auth)) -> FeedbackSummary:
     return FeedbackSummary(**feedback_store.summarize_feedback(db))

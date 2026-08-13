@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth import require_auth
+from app.auth import require_auth, require_legacy_pipeline_disabled_in_production
+from app.models.user import UserORM
 from app.db import get_db
 from app.schemas.capture import Capture, CaptureRead
 from app.schemas.cluster import ClusterCaptureItem, ClusterRead, ClusterRunResult
 from app.services import clustering
 
-router = APIRouter(prefix="/clusters", tags=["clusters"])
+router = APIRouter(
+    prefix="/clusters", tags=["clusters"],
+    dependencies=[Depends(require_legacy_pipeline_disabled_in_production)],
+)
 
 
 def _to_cluster_read(cluster) -> ClusterRead:
@@ -38,9 +42,9 @@ def run_clustering(
         default=clustering.DEFAULT_SIMILARITY_THRESHOLD, ge=0.0, le=1.0
     ),
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> ClusterRunResult:
-    summary = clustering.run_clustering(db, similarity_threshold=similarity_threshold)
+    summary = clustering.run_clustering(db, similarity_threshold=similarity_threshold, user_id=user.id if user else None)
     return ClusterRunResult(
         captures_considered=summary.captures_considered,
         clusters_created=summary.clusters_created,
@@ -54,16 +58,17 @@ def run_clustering(
 def list_clusters(
     include_archived: bool = Query(default=False),
     db: Session = Depends(get_db),
+    user: UserORM | None = Depends(require_auth),
 ) -> list[ClusterRead]:
     return [
         _to_cluster_read(cluster)
-        for cluster in clustering.list_clusters(db, include_archived=include_archived)
+        for cluster in clustering.list_clusters(db, include_archived=include_archived, user_id=user.id if user else None)
     ]
 
 
 @router.get("/{cluster_id}", response_model=ClusterRead)
-def get_cluster(cluster_id: str, db: Session = Depends(get_db)) -> ClusterRead:
-    cluster = clustering.get_cluster(db, cluster_id)
+def get_cluster(cluster_id: str, db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> ClusterRead:
+    cluster = clustering.get_cluster(db, cluster_id, user_id=user.id if user else None)
     if cluster is None:
         raise HTTPException(status_code=404, detail="Cluster not found")
     return _to_cluster_read(cluster)

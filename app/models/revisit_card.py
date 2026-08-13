@@ -27,6 +27,7 @@ class RevisitCardORM(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     capture_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("captures.id"), nullable=True
     )

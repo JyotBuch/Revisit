@@ -23,6 +23,7 @@ class RevisitCardFeedbackORM(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     revisit_card_id: Mapped[str] = mapped_column(
         String, ForeignKey("revisit_cards.id"), nullable=False
     )

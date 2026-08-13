@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.auth import require_auth
 from app.models.telemetry import LlmCallORM
 from app.services import telemetry as telemetry_service
 
@@ -42,13 +44,18 @@ class LlmCallRow(BaseModel):
     created_at: str
 
 
+def _internal(_=Depends(require_auth)):
+    if os.environ.get("ENVIRONMENT") == "production":
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 @router.get("/summary", response_model=TelemetrySummary)
-def get_summary(db: Session = Depends(get_db)) -> TelemetrySummary:
+def get_summary(db: Session = Depends(get_db), _=Depends(_internal)) -> TelemetrySummary:
     return TelemetrySummary(**telemetry_service.get_telemetry_summary(db))
 
 
 @router.get("/jobs/{job_id}/trace")
-def get_job_trace(job_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_job_trace(job_id: str, db: Session = Depends(get_db), _=Depends(_internal)) -> Dict[str, Any]:
     return telemetry_service.get_job_trace(db, job_id)
 
 
@@ -56,6 +63,7 @@ def get_job_trace(job_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
 def list_llm_calls(
     limit: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
+    _=Depends(_internal),
 ) -> List[LlmCallRow]:
     rows = db.scalars(
         select(LlmCallORM).order_by(LlmCallORM.created_at.desc()).limit(limit)
