@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Revisit",
+  "version": "0.1.0",
+  "description": "Capture or research selected text without leaving the page.",
+  "permissions": ["identity", "storage", "contextMenus", "activeTab", "alarms"],
+  "host_permissions": ["https://revisit.onrender.com/*", "http://127.0.0.1:8000/*"],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_CHROME_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  },
+  "background": {"service_worker": "background.js", "type": "module"},
+  "content_scripts": [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "action": {"default_popup": "popup.html", "default_title": "Save to Revisit"},
+  "options_page": "options.html",
+  "commands": {
+    "capture-selection": {
+      "suggested_key": {"default": "Alt+Shift+S", "mac": "Alt+Shift+S"},
+      "description": "Capture the current selection"
+    }
+  }
+}

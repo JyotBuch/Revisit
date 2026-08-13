@@ -58,8 +58,16 @@ class DailyBatchError(RuntimeError):
         self.job_id = job_id
 
 
-def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
-    job = jobs.start_job(db, JobType.daily_batch)
+def run_daily_batch(
+    db: Session, generation_method: str = "rule_based", *,
+    user_id: str | None = None, existing_job_id: str | None = None,
+) -> Job:
+    if existing_job_id:
+        job = jobs.get_job(db, existing_job_id)
+        if job is None:
+            raise ValueError("Existing job not found")
+    else:
+        job = jobs.start_job(db, JobType.daily_batch, user_id=user_id)
 
     batch_step = telemetry.start_agent_step(
         db, job_id=job.id, step_name="daily_batch"
@@ -68,9 +76,10 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
     try:
         method = GenerationMethod(generation_method)
 
-        capture_rows = db.scalars(
-            select(CaptureORM).where(CaptureORM.label == CaptureLabel.return_)
-        ).all()
+        capture_query = select(CaptureORM).where(CaptureORM.label == CaptureLabel.return_)
+        if user_id is not None:
+            capture_query = capture_query.where(CaptureORM.user_id == user_id)
+        capture_rows = db.scalars(capture_query).all()
         captures_considered = len(capture_rows)
         captures_extracted = 0
         extraction_failures = 0
@@ -132,7 +141,7 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
         cluster_step = telemetry.start_agent_step(
             db, job_id=job.id, step_name="run_clustering"
         )
-        clustering_summary = clustering.run_clustering(db)
+        clustering_summary = clustering.run_clustering(db, user_id=user_id)
         telemetry.complete_agent_step(
             db,
             cluster_step.id,
@@ -144,7 +153,7 @@ def run_daily_batch(db: Session, generation_method: str = "rule_based") -> Job:
         )
         db.commit()
 
-        clusters = clustering.list_clusters(db)
+        clusters = clustering.list_clusters(db, user_id=user_id)
 
         from app.services import research_agent as ra
 

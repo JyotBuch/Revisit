@@ -13,9 +13,10 @@ services:
   - type: web
     name: revisit
     runtime: python
-    plan: free           # upgrade to "starter" for persistent DB and no spin-down
+    plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: bash scripts/start.sh
+    preDeployCommand: alembic upgrade head
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120 app.main:app
     healthCheckPath: /health
     envVars:
       # Injected automatically from the database below — do not set manually.
@@ -27,10 +28,24 @@ services:
       # Auth — required in production.
       - key: AUTH_ENABLED
         value: true
+      - key: ENVIRONMENT
+        value: production
+      - key: ALLOWED_HOSTS
+        value: "*.onrender.com"
+      - key: ALLOWED_EXTENSION_ORIGINS
+        sync: false
       - key: APP_USERNAME
         sync: false   # set in Render dashboard
       - key: APP_PASSWORD
         sync: false   # set in Render dashboard
+      - key: GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_WEB_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_WEB_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_EXTENSION_CLIENT_ID
+        sync: false
 
       # OpenAI — optional; embeddings + LLM card generation fall back to
       # rule-based/fake if unset.
@@ -50,8 +65,41 @@ services:
       - key: PYTHON_VERSION
         value: "3.12.0"
 
+  - type: worker
+    name: revisit-worker
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: revisit-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SEARCH_PROVIDER
+        value: tavily
+      - key: DEFAULT_GENERATION_METHOD
+        value: llm
+
+  - type: cron
+    name: revisit-nightly-scheduler
+    runtime: python
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.scheduler
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: revisit-db
+          property: connectionString
+
 databases:
   - name: revisit-db
     databaseName: revisit
     user: revisit
-    plan: free   # free plan expires after 90 days — upgrade to "starter" for persistence
+    plan: basic-256mb

@@ -41,7 +41,8 @@ def _average_embedding(vectors: List[List[float]]) -> List[float]:
 
 
 def run_clustering(
-    db: Session, similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
+    db: Session, similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    user_id: str | None = None,
 ) -> ClusteringSummary:
     """Incrementally update clusters, preserving stable cluster identity.
 
@@ -73,20 +74,28 @@ def run_clustering(
     A cluster's `title` is preserved whenever the cluster is reused; only
     brand-new clusters get a fresh placeholder title.
     """
-    rows = db.execute(
+    captures_query = (
         select(CaptureORM, CaptureEmbeddingORM.embedding)
         .join(CaptureEmbeddingORM, CaptureEmbeddingORM.capture_id == CaptureORM.id)
         .order_by(CaptureORM.created_at)
-    ).all()
+    )
+    if user_id is not None:
+        captures_query = captures_query.where(CaptureORM.user_id == user_id)
+    rows = db.execute(captures_query).all()
     embedding_by_capture_id: Dict[str, List[float]] = {
         capture.id: embedding for capture, embedding in rows
     }
 
-    active_clusters = list(
-        db.scalars(
+    cluster_query = (
             select(ClusterORM)
             .where(ClusterORM.status == ClusterStatus.active)
             .options(selectinload(ClusterORM.items))
+    )
+    if user_id is not None:
+        cluster_query = cluster_query.where(ClusterORM.user_id == user_id)
+    active_clusters = list(
+        db.scalars(
+            cluster_query
         ).all()
     )
 
@@ -136,6 +145,7 @@ def run_clustering(
         if best_cluster is None:
             best_cluster = ClusterORM(
                 id=str(uuid.uuid4()),
+                user_id=user_id or capture.user_id,
                 title=capture.title or "Untitled Cluster",
                 representative_capture_id=capture.id,
                 centroid_embedding=embedding,
@@ -199,18 +209,22 @@ def run_clustering(
     )
 
 
-def list_clusters(db: Session, include_archived: bool = False) -> List[ClusterORM]:
+def list_clusters(db: Session, include_archived: bool = False, user_id: str | None = None) -> List[ClusterORM]:
     query = select(ClusterORM).options(
         selectinload(ClusterORM.items).selectinload(ClusterItemORM.capture)
     )
     if not include_archived:
         query = query.where(ClusterORM.status == ClusterStatus.active)
+    if user_id is not None:
+        query = query.where(ClusterORM.user_id == user_id)
     return list(db.scalars(query.order_by(ClusterORM.created_at)).all())
 
 
-def get_cluster(db: Session, cluster_id: str) -> Optional[ClusterORM]:
-    return db.scalar(
-        select(ClusterORM)
-        .where(ClusterORM.id == cluster_id)
+def get_cluster(db: Session, cluster_id: str, user_id: str | None = None) -> Optional[ClusterORM]:
+    query = (
+        select(ClusterORM).where(ClusterORM.id == cluster_id)
         .options(selectinload(ClusterORM.items).selectinload(ClusterItemORM.capture))
     )
+    if user_id is not None:
+        query = query.where(ClusterORM.user_id == user_id)
+    return db.scalar(query)

@@ -1,120 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Backlog — Revisit{% endblock %}
-
+{% block title %}Research Newsletter — Revisit{% endblock %}
 {% block content %}
 <div class="toolbar">
-  <h1 style="margin:0">Backlog</h1>
-  <button class="btn btn-secondary btn-sm" onclick="loadCards()">Refresh</button>
+  <div><h1 style="margin:0">Your research newsletter</h1><p class="meta">Fresh research from the passages you marked Research.</p></div>
+  <button class="btn btn-primary btn-sm" id="run" onclick="runNow()">Run now</button>
 </div>
-
-<div id="alert-area"></div>
-<div id="cards-area"><p class="loading">Loading…</p></div>
+<div id="alert-area"></div><div id="issues"><p class="loading">Loading…</p></div>
 {% endblock %}
-
 {% block scripts %}
 <script>
-async function loadCards() {
-  const area = document.getElementById('cards-area');
-  area.innerHTML = '<p class="loading">Loading…</p>';
+const safe = value => String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+async function loadIssues() {
+  const area = document.getElementById('issues');
   try {
-    const cards = await api('GET', '/revisit-cards');
-    if (!cards.length) {
-      area.innerHTML = '<p class="loading">No cards yet — run the daily batch to generate some.</p>';
-      return;
-    }
-    const cluster = cards.filter(c => c.card_type === 'cluster');
-    const individual = cards.filter(c => c.card_type === 'individual');
-    let html = '';
-    if (cluster.length) {
-      html += `<h2>Cluster cards (${cluster.length})</h2>`;
-      html += cluster.map(renderCard).join('');
-    }
-    if (individual.length) {
-      html += `<hr class="divider"><h2>Individual cards (${individual.length})</h2>`;
-      html += individual.map(renderCard).join('');
-    }
-    area.innerHTML = html;
-  } catch (err) {
-    area.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
-  }
+    const issues = await api('GET', '/api/v1/newsletters');
+    if (!issues.length) { area.innerHTML = '<div class="card"><h2>No issue yet</h2><p>Mark passages as Research in the extension, then click Run now. Captures stay saved without entering the research newsletter.</p></div>'; return; }
+    area.innerHTML = issues.map(issue => `<article class="card">
+      <div class="meta">${fmtDate(issue.created_at)}</div><h2>${safe(issue.subject)}</h2><p>${safe(issue.introduction)}</p>
+      ${issue.items.map(item => `<section style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
+        <h3>${safe(item.title)}</h3><blockquote style="margin:.7rem 0;padding:.7rem 1rem;border-left:3px solid var(--accent);color:var(--text-muted)">${safe(item.saved_text)}</blockquote>
+        <div class="section-label">What the research says</div><div class="body-text">${safe(item.research_summary)}</div>
+        ${item.sources.length ? `<div class="field-block"><div class="section-label">Sources</div><ul class="resource-list">${item.sources.map(source => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${safe(source.title)}</a></li>`).join('')}</ul></div>` : ''}
+        <div class="field-block"><div class="section-label">Keep thinking</div><div class="body-text">${safe(item.next_question)}</div></div>
+      </section>`).join('')}</article>`).join('');
+  } catch (error) { area.innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`; }
 }
-
-function renderCard(card) {
-  const typeTag = card.card_type === 'cluster'
-    ? tag('cluster', 'tag-cluster')
-    : tag('individual', 'tag-individual');
-  const methodTag = card.generation_method === 'llm'
-    ? tag('llm', 'tag-llm')
-    : tag('rule-based', 'tag-rule');
-
-  let resources = '';
-  if (card.resources && card.resources.length) {
-    const items = card.resources.map(r =>
-      `<li><a href="${r.url}" target="_blank" rel="noopener">${r.title || r.url}</a>` +
-      (r.snippet ? ` <span class="meta">— ${r.snippet.slice(0,120)}</span>` : '') +
-      `</li>`
-    ).join('');
-    resources = `
-      <div class="field-block">
-        <div class="section-label">Resources</div>
-        <ul class="resource-list">${items}</ul>
-      </div>`;
-  }
-
-  return `
-  <div class="card" id="card-${card.id}">
-    <div class="card-header">
-      <span class="card-title">${escHtml(card.title)}</span>
-      <span>${typeTag} ${methodTag}</span>
-    </div>
-    <div class="meta">${fmtDate(card.created_at)}</div>
-
-    <div class="field-block">
-      <div class="section-label">Why saved</div>
-      <div class="body-text">${escHtml(card.why_saved)}</div>
-    </div>
-
-    ${card.original_context ? `
-    <div class="field-block">
-      <div class="section-label">Context</div>
-      <div class="body-text">${escHtml(card.original_context)}</div>
-    </div>` : ''}
-
-    <div class="field-block">
-      <div class="section-label">Next action</div>
-      <div class="body-text">${escHtml(card.next_action)}</div>
-    </div>
-
-    ${resources}
-
-    <div class="feedback-row">
-      ${['opened','useful','not_useful','dismissed','next_action_taken'].map(action =>
-        `<button class="btn btn-secondary btn-sm" onclick="sendFeedback('${card.id}','${action}',this)">
-          ${action.replace(/_/g,' ')}
-        </button>`
-      ).join('')}
-    </div>
-    <div id="fb-${card.id}" class="meta" style="margin-top:.4rem"></div>
-  </div>`;
+async function runNow() {
+  const button = document.getElementById('run'); button.disabled = true;
+  try { const job = await api('POST', '/api/v1/jobs/research'); document.getElementById('alert-area').innerHTML = `<div class="alert alert-info">Research queued (${safe(job.id.slice(0,8))}). Refresh in a few minutes.</div>`; }
+  catch (error) { document.getElementById('alert-area').innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`; }
+  finally { button.disabled = false; }
 }
-
-async function sendFeedback(cardId, action, btn) {
-  btn.disabled = true;
-  try {
-    await api('POST', `/revisit-cards/${cardId}/feedback`, { action });
-    document.getElementById(`fb-${cardId}`).textContent = `✓ Logged: ${action}`;
-  } catch (err) {
-    document.getElementById(`fb-${cardId}`).textContent = `Error: ${err.message}`;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function escHtml(s) {
-  if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-loadCards();
+loadIssues();
 </script>
 {% endblock %}

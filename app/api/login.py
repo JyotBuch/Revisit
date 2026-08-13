@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -18,11 +19,16 @@ class LoginRequest(BaseModel):
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request, "login.html")
+    return templates.TemplateResponse(request, "login.html", {
+        "google_enabled": bool(os.environ.get("GOOGLE_WEB_CLIENT_ID")),
+        "legacy_enabled": os.environ.get("ENVIRONMENT") != "production",
+    })
 
 
 @router.post("/login")
 def do_login(body: LoginRequest) -> JSONResponse:
+    if os.environ.get("ENVIRONMENT") == "production":
+        return JSONResponse(status_code=404, content={"detail": "Use Google sign-in"})
     if not auth.check_credentials(body.username, body.password):
         return JSONResponse(status_code=401, content={"detail": "Invalid credentials"})
     token = auth.create_session()

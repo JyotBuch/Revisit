@@ -19,6 +19,7 @@ class ClusterORM(Base):
     __tablename__ = "clusters"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     representative_capture_id: Mapped[str | None] = mapped_column(

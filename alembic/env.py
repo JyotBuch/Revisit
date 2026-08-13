@@ -11,11 +11,13 @@ from app.models import (  # noqa: F401  (registers ORM classes on Base)
     capture_embedding,
     cluster,
     job,
+    newsletter,
     resource,
     revisit_card,
     revisit_card_feedback,
     revisit_card_resource,
     telemetry,
+    user,
 )
 
 # this is the Alembic Config object, which provides

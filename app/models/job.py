@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import JSON
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -13,6 +13,7 @@ class JobORM(Base):
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_type: Mapped[JobType] = mapped_column(
         SAEnum(
             JobType,
@@ -28,6 +29,11 @@ class JobORM(Base):
         ),
         server_default=JobStatus.running.value,
     )
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    available_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )

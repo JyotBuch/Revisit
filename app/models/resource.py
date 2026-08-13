@@ -17,6 +17,7 @@ class ResourceORM(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     cluster_id: Mapped[str] = mapped_column(
         String, ForeignKey("clusters.id"), nullable=False
     )

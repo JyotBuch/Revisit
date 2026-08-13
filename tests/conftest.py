@@ -34,6 +34,10 @@ TestSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=Fa
 
 # Ordered so that FK-dependent tables are cleared before their parents.
 _TABLES_TO_TRUNCATE = [
+    "newsletter_captures",
+    "newsletters",
+    "idempotency_keys",
+    "extension_tokens",
     "revisit_card_resources",
     "revisit_card_feedback",
     "revisit_cards",
@@ -47,6 +51,7 @@ _TABLES_TO_TRUNCATE = [
     "agent_steps",
     "retrieval_events",
     "sessions",
+    "users",
 ]
 
 

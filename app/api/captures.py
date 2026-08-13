@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth import require_auth
+from app.auth import require_auth, require_legacy_pipeline_disabled_in_production
+from app.models.user import UserORM
 from app.db import get_db
 from app.schemas.capture import CaptureCreate, CaptureRead
 from app.schemas.embedding import CaptureEmbeddingRead, SimilarCapture
@@ -14,20 +15,20 @@ router = APIRouter(prefix="/captures", tags=["captures"])
 def create_capture(
     data: CaptureCreate,
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> CaptureRead:
-    capture = capture_store.create_capture(db, data)
+    capture = capture_store.create_capture(db, data, user_id=user.id if user else None)
     return CaptureRead(**capture.model_dump())
 
 
 @router.get("", response_model=list[CaptureRead])
-def list_captures(db: Session = Depends(get_db)) -> list[CaptureRead]:
-    return [CaptureRead(**c.model_dump()) for c in capture_store.list_captures(db)]
+def list_captures(db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> list[CaptureRead]:
+    return [CaptureRead(**c.model_dump()) for c in capture_store.list_captures(db, user_id=user.id if user else None)]
 
 
 @router.get("/{capture_id}", response_model=CaptureRead)
-def get_capture(capture_id: str, db: Session = Depends(get_db)) -> CaptureRead:
-    capture = capture_store.get_capture(db, capture_id)
+def get_capture(capture_id: str, db: Session = Depends(get_db), user: UserORM | None = Depends(require_auth)) -> CaptureRead:
+    capture = capture_store.get_capture(db, capture_id, user_id=user.id if user else None)
     if capture is None:
         raise HTTPException(status_code=404, detail="Capture not found")
     return CaptureRead(**capture.model_dump())
@@ -37,9 +38,10 @@ def get_capture(capture_id: str, db: Session = Depends(get_db)) -> CaptureRead:
 def extract_capture(
     capture_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> CaptureRead:
-    capture = capture_store.get_capture(db, capture_id)
+    require_legacy_pipeline_disabled_in_production()
+    capture = capture_store.get_capture(db, capture_id, user_id=user.id if user else None)
     if capture is None:
         raise HTTPException(status_code=404, detail="Capture not found")
 
@@ -58,9 +60,10 @@ def extract_capture(
 def embed_capture(
     capture_id: str,
     db: Session = Depends(get_db),
-    _: None = Depends(require_auth),
+    user: UserORM | None = Depends(require_auth),
 ) -> CaptureEmbeddingRead:
-    capture = capture_store.get_capture(db, capture_id)
+    require_legacy_pipeline_disabled_in_production()
+    capture = capture_store.get_capture(db, capture_id, user_id=user.id if user else None)
     if capture is None:
         raise HTTPException(status_code=404, detail="Capture not found")
     if not capture.extracted_text:
@@ -83,8 +86,10 @@ def similar_captures(
     capture_id: str,
     limit: int = Query(default=5, ge=1, le=50),
     db: Session = Depends(get_db),
+    user: UserORM | None = Depends(require_auth),
 ) -> list[SimilarCapture]:
-    capture = capture_store.get_capture(db, capture_id)
+    require_legacy_pipeline_disabled_in_production()
+    capture = capture_store.get_capture(db, capture_id, user_id=user.id if user else None)
     if capture is None:
         raise HTTPException(status_code=404, detail="Capture not found")
 

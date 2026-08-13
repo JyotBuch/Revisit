@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Float, Integer, String, Text
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -10,6 +10,7 @@ class LlmCallORM(Base):
     __tablename__ = "llm_calls"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     owner_type: Mapped[str | None] = mapped_column(String, nullable=True)
     owner_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -32,6 +33,7 @@ class AgentStepORM(Base):
     __tablename__ = "agent_steps"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     step_name: Mapped[str] = mapped_column(String, nullable=False)
     owner_type: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -51,6 +53,7 @@ class RetrievalEventORM(Base):
     __tablename__ = "retrieval_events"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     cluster_id: Mapped[str | None] = mapped_column(String, nullable=True)
     query: Mapped[str | None] = mapped_column(String, nullable=True)
