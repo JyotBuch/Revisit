@@ -39,8 +39,9 @@
     const root = host.attachShadow({ mode: "closed" });
     currentRoot = root;
     root.innerHTML = `<style>
-      .box{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111827;color:#fff;border-radius:10px;padding:7px;box-shadow:0 8px 28px #0005;display:flex;gap:5px;align-items:center}
+      .box{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111827;color:#fff;border-radius:10px;padding:7px;box-shadow:0 8px 28px #0005;display:flex;gap:5px;align-items:center;min-height:38px}
       button{border:0;border-radius:7px;padding:7px 10px;font:600 12px inherit;cursor:pointer}.research{background:#6366f1;color:#fff}.capture{background:#fff;color:#111827}.note{background:transparent;color:#c7d2fe;padding:5px}button:disabled{opacity:.55}.status{padding:0 5px;color:#d1d5db;max-width:170px}.status[data-state="ok"]{color:#86efac}.status[data-state="error"]{color:#fca5a5}input{width:180px;border:0;border-radius:6px;padding:7px;display:none}.with-note input{display:block}.with-note .note{display:none}
+      .box.complete button,.box.complete input{display:none}.box.complete .status{font-weight:700;font-size:13px;padding:4px 9px}
     </style><div class="box"><button class="research">Research</button><button class="capture">Capture</button><button class="note" title="Add optional context">+ context</button><input maxlength="1000" placeholder="Optional context"><span class="status"></span></div>`;
     const box = root.querySelector(".box");
     root.querySelector(".note").onclick = () => { box.classList.add("with-note"); root.querySelector("input").focus(); };
@@ -48,9 +49,22 @@
       if (busy) return; busy = true;
       root.querySelectorAll("button").forEach(button => button.disabled = true);
       renderStatus(root, "Saving…");
-      const result = await chrome.runtime.sendMessage({ type: "REVISIT_SAVE", payload: payload(mode, root.querySelector("input").value) });
-      if (result?.ok) { renderStatus(root, "Saved", "ok"); setTimeout(remove, 900); }
-      else { renderStatus(root, result?.error || "Retry", "error"); busy = false; root.querySelectorAll("button").forEach(button => button.disabled = false); }
+      try {
+        const result = await chrome.runtime.sendMessage({ type: "REVISIT_SAVE", payload: payload(mode, root.querySelector("input").value) });
+        if (result?.ok) {
+          box.classList.add("complete");
+          renderStatus(root, mode === "research" ? "✓ Sent to Research" : "✓ Captured", "ok");
+          setTimeout(remove, 2500);
+        } else {
+          renderStatus(root, result?.error || "Could not save — retry", "error");
+          busy = false;
+          root.querySelectorAll("button").forEach(button => button.disabled = false);
+        }
+      } catch (error) {
+        renderStatus(root, "Extension reloaded — refresh this page", "error");
+        busy = false;
+        root.querySelectorAll("button").forEach(button => button.disabled = false);
+      }
     };
     document.documentElement.appendChild(host);
   }
