@@ -27,9 +27,33 @@ async function loadIssues() {
 }
 async function runNow() {
   const button = document.getElementById('run'); button.disabled = true;
-  try { const job = await api('POST', '/api/v1/jobs/research'); document.getElementById('alert-area').innerHTML = `<div class="alert alert-info">Research queued (${safe(job.id.slice(0,8))}). Refresh in a few minutes.</div>`; }
+  try {
+    const job = await api('POST', '/api/v1/jobs/research');
+    const alertArea = document.getElementById('alert-area');
+    alertArea.innerHTML = `<div class="alert alert-info">Building your newsletter… (${safe(job.id.slice(0,8))})</div>`;
+    await waitForJob(job.id, alertArea);
+  }
   catch (error) { document.getElementById('alert-area').innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`; }
   finally { button.disabled = false; }
+}
+
+async function waitForJob(jobId, alertArea) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const job = await api('GET', `/api/v1/jobs/${encodeURIComponent(jobId)}`);
+    if (job.status === 'succeeded') {
+      if (job.summary_json?.newsletter_created) {
+        alertArea.innerHTML = '<div class="alert alert-success">Newsletter ready.</div>';
+        await loadIssues();
+      } else {
+        alertArea.innerHTML = '<div class="alert alert-info">No new Research captures were available. Previously used selections are not added twice.</div>';
+      }
+      return;
+    }
+    if (job.status === 'failed') throw new Error(job.error || 'Newsletter generation failed');
+    await new Promise(resolve => setTimeout(resolve, 2500));
+  }
+  throw new Error('Newsletter generation is still running. You can safely refresh this page and check again.');
 }
 loadIssues();
 </script>
