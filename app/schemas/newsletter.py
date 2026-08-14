@@ -10,6 +10,7 @@ class NewsletterSource(BaseModel):
 
 class NewsletterItem(BaseModel):
     capture_id: str
+    research_question: str | None = None
     title: str
     saved_text: str
     research_summary: str

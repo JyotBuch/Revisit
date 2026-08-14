@@ -8,7 +8,7 @@ from app.models.user import UserORM
 from app.schemas.capture import CaptureLabel, SourceType
 from app.schemas.job import JobStatus, JobType
 from app.services.newsletter import run_newsletter_batch
-from app.services.newsletter import _safe_web_url
+from app.services.newsletter import _safe_web_url, _search
 from app.services.inline_research import run_inline_research_job
 
 
@@ -55,6 +55,7 @@ def test_clear_captures_deletes_only_current_users_rows(client, db):
     user, other = make_user(db), make_user(db, "clear-other@example.com")
     mine = CaptureORM(id=str(uuid.uuid4()), user_id=user.id, source_type=SourceType.note, user_note="mine", label=CaptureLabel.casual)
     theirs = CaptureORM(id=str(uuid.uuid4()), user_id=other.id, source_type=SourceType.note, user_note="theirs", label=CaptureLabel.casual)
+    mine_id, theirs_id = mine.id, theirs.id
     db.add_all([mine, theirs])
     db.commit()
     app.dependency_overrides[auth.current_user] = lambda: user
@@ -63,8 +64,8 @@ def test_clear_captures_deletes_only_current_users_rows(client, db):
 
     assert response.status_code == 204
     db.expire_all()
-    assert db.get(CaptureORM, mine.id) is None
-    assert db.get(CaptureORM, theirs.id) is not None
+    assert db.get(CaptureORM, mine_id) is None
+    assert db.get(CaptureORM, theirs_id) is not None
     app.dependency_overrides.pop(auth.current_user, None)
 
 
@@ -87,6 +88,34 @@ def test_newsletter_source_urls_reject_active_schemes():
     assert _safe_web_url("javascript:alert(1)") is None
     assert _safe_web_url("data:text/html,pwned") is None
     assert _safe_web_url("https://example.com/article") == "https://example.com/article"
+
+
+def test_newsletter_search_prioritizes_user_question(monkeypatch):
+    observed = {}
+
+    class SearchResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": []}
+
+    def fake_post(url, *, json, timeout):
+        observed.update(json)
+        return SearchResponse()
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setattr("app.services.newsletter.requests.post", fake_post)
+    capture = CaptureORM(
+        id=str(uuid.uuid4()), source_type=SourceType.passage, label=CaptureLabel.return_,
+        title="Open versus closed AI", selected_text="Should models be open?",
+        user_note="What have other AI leaders said about this?",
+    )
+
+    _search(capture)
+
+    assert observed["query"].startswith("What have other AI leaders said about this?")
+    assert "Open versus closed AI" in observed["query"]
 
 
 def test_public_capture_rejects_non_web_url(client, db):
