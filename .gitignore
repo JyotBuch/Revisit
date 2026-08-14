@@ -11,6 +11,7 @@ build/
 .env
 .env.local
 .env.*.local
+client_secret_*.json
 
 # --- Generated eval outputs ---
 # Reports are produced by running the eval harness against live LLM calls.

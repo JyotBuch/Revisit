@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND = "https://revisit.onrender.com";
+const DEFAULT_BACKEND = "https://revisit-gqyx.onrender.com";
 
 async function settings() {
   return chrome.storage.sync.get({ backendUrl: DEFAULT_BACKEND });

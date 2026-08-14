@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -152,6 +152,23 @@ def list_captures(
 ) -> list[CaptureRead]:
     rows = db.scalars(select(CaptureORM).where(CaptureORM.user_id == user.id).order_by(CaptureORM.created_at.desc())).all()
     return [CaptureRead.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.delete("/captures", status_code=204)
+def clear_captures(
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db)
+) -> Response:
+    """Clear the current user's captures and derived newsletter issues."""
+    active_job = db.scalar(select(JobORM.id).where(
+        JobORM.user_id == user.id,
+        JobORM.status.in_([JobStatus.queued, JobStatus.running]),
+    ))
+    if active_job:
+        raise HTTPException(status_code=409, detail="Wait for newsletter generation to finish before clearing captures")
+    db.execute(delete(NewsletterORM).where(NewsletterORM.user_id == user.id))
+    db.execute(delete(CaptureORM).where(CaptureORM.user_id == user.id))
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/cards", response_model=list[RevisitCardRead])

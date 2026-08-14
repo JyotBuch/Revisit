@@ -41,6 +41,12 @@
     </div>
   </form>
 </div>
+
+<div class="toolbar" style="margin-top:2rem">
+  <div><h2 style="margin:0">Saved captures</h2><p class="meta">Items saved from the extension appear here.</p></div>
+  <button type="button" class="btn btn-danger btn-sm" id="clear-captures" onclick="clearCaptures()">Clear captures</button>
+</div>
+<div id="capture-list"><p class="loading">Loading…</p></div>
 {% endblock %}
 
 {% block scripts %}
@@ -78,5 +84,42 @@ function showAlert(type, msg) {
 function clearAlert() {
   document.getElementById('alert-area').innerHTML = '';
 }
+
+const safe = value => String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+async function loadCaptures() {
+  const area = document.getElementById('capture-list');
+  try {
+    const captures = await api('GET', '/api/v1/captures');
+    if (!captures.length) {
+      area.innerHTML = '<div class="card"><p>No captures yet.</p></div>';
+      return;
+    }
+    area.innerHTML = captures.map(capture => `<article class="card" style="margin-bottom:1rem">
+      <div class="meta">${safe(capture.label === 'return' ? 'Research' : 'Capture')} · ${safe(fmtDate(capture.captured_at || capture.created_at))}</div>
+      <h3>${safe(capture.title || capture.domain || 'Saved selection')}</h3>
+      <p>${safe(capture.selected_text || capture.user_note || capture.url || '')}</p>
+    </article>`).join('');
+  } catch (error) {
+    area.innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`;
+  }
+}
+
+async function clearCaptures() {
+  if (!confirm('Clear all of your captures and generated newsletters? This cannot be undone.')) return;
+  const button = document.getElementById('clear-captures');
+  button.disabled = true;
+  try {
+    await api('DELETE', '/api/v1/captures');
+    showAlert('success', 'Captures and newsletters cleared.');
+    await loadCaptures();
+  } catch (error) {
+    showAlert('error', error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+loadCaptures();
 </script>
 {% endblock %}
