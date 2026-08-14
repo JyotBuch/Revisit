@@ -8,7 +8,7 @@ from app.models.user import UserORM
 from app.schemas.capture import CaptureLabel, SourceType
 from app.schemas.job import JobStatus, JobType
 from app.services.newsletter import run_newsletter_batch
-from app.services.newsletter import _safe_web_url
+from app.services.newsletter import _safe_web_url, _search
 from app.services.inline_research import run_inline_research_job
 
 
@@ -87,6 +87,34 @@ def test_newsletter_source_urls_reject_active_schemes():
     assert _safe_web_url("javascript:alert(1)") is None
     assert _safe_web_url("data:text/html,pwned") is None
     assert _safe_web_url("https://example.com/article") == "https://example.com/article"
+
+
+def test_newsletter_search_prioritizes_user_question(monkeypatch):
+    observed = {}
+
+    class SearchResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": []}
+
+    def fake_post(url, *, json, timeout):
+        observed.update(json)
+        return SearchResponse()
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setattr("app.services.newsletter.requests.post", fake_post)
+    capture = CaptureORM(
+        id=str(uuid.uuid4()), source_type=SourceType.passage, label=CaptureLabel.return_,
+        title="Open versus closed AI", selected_text="Should models be open?",
+        user_note="What have other AI leaders said about this?",
+    )
+
+    _search(capture)
+
+    assert observed["query"].startswith("What have other AI leaders said about this?")
+    assert "Open versus closed AI" in observed["query"]
 
 
 def test_public_capture_rejects_non_web_url(client, db):

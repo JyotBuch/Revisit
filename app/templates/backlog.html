@@ -19,6 +19,7 @@ async function loadIssues() {
       <div class="meta">${fmtDate(issue.created_at)}</div><h2>${safe(issue.subject)}</h2><p>${safe(issue.introduction)}</p>
       ${issue.items.map(item => `<section style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
         <h3>${safe(item.title)}</h3><blockquote style="margin:.7rem 0;padding:.7rem 1rem;border-left:3px solid var(--accent);color:var(--text-muted)">${safe(item.saved_text)}</blockquote>
+        ${item.research_question ? `<div class="field-block"><div class="section-label">Your question</div><div class="body-text">${safe(item.research_question)}</div></div>` : ''}
         <div class="section-label">What the research says</div><div class="body-text">${safe(item.research_summary)}</div>
         ${item.sources.length ? `<div class="field-block"><div class="section-label">Sources</div><ul class="resource-list">${item.sources.map(source => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${safe(source.title)}</a></li>`).join('')}</ul></div>` : ''}
         <div class="field-block"><div class="section-label">Keep thinking</div><div class="body-text">${safe(item.next_question)}</div></div>
