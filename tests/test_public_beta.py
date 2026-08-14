@@ -55,6 +55,7 @@ def test_clear_captures_deletes_only_current_users_rows(client, db):
     user, other = make_user(db), make_user(db, "clear-other@example.com")
     mine = CaptureORM(id=str(uuid.uuid4()), user_id=user.id, source_type=SourceType.note, user_note="mine", label=CaptureLabel.casual)
     theirs = CaptureORM(id=str(uuid.uuid4()), user_id=other.id, source_type=SourceType.note, user_note="theirs", label=CaptureLabel.casual)
+    mine_id, theirs_id = mine.id, theirs.id
     db.add_all([mine, theirs])
     db.commit()
     app.dependency_overrides[auth.current_user] = lambda: user
@@ -63,8 +64,8 @@ def test_clear_captures_deletes_only_current_users_rows(client, db):
 
     assert response.status_code == 204
     db.expire_all()
-    assert db.get(CaptureORM, mine.id) is None
-    assert db.get(CaptureORM, theirs.id) is not None
+    assert db.get(CaptureORM, mine_id) is None
+    assert db.get(CaptureORM, theirs_id) is not None
     app.dependency_overrides.pop(auth.current_user, None)
 
 

@@ -1,0 +1,47 @@
+name: Revisit beta interest
+description: Tell us how you would use Revisit and request access to the private beta.
+title: "[Beta interest]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in Revisit. This issue is public, so please do not include private, confidential, or sensitive information.
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: What best describes you?
+      options:
+        - Researcher or student
+        - Writer or journalist
+        - Founder or product builder
+        - Analyst or investor
+        - Curious reader
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What would you use Revisit to research?
+      description: Describe the reading or research workflow you want Revisit to improve.
+      placeholder: I regularly read about… and want help turning saved passages into…
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would make the beta useful to you?
+      description: Tell us what a successful research briefing would help you understand or do.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledgment
+    attributes:
+      label: Public issue acknowledgment
+      options:
+        - label: I understand this request is public and have not included sensitive information.
+          required: true

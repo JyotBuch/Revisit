@@ -1,167 +1,114 @@
+<div align="center">
+
 # Revisit
 
-You save things with the intention of returning to them. You rarely do.
+### Turn the passages you save into research worth returning to.
 
-Revisit is a capture-to-research newsletter. Select text on any webpage and choose **Research** or **Capture**. Revisit records the passage and page context without requiring a form; research selections become a sourced nightly briefing, while capture-only selections stay in your library.
+Revisit is a Chrome research companion that captures selected text in one click and turns your questions into a focused, sourced newsletter.
 
----
+**Private beta · Chrome extension + web app**
+
+[Join the beta waitlist](https://github.com/JyotBuch/Revisit/issues/new?template=beta-interest.yml) · [How it works](#how-it-works) · [Run locally](#run-locally)
+
+</div>
+
+<p align="center">
+  <img src="docs/images/revisit-selection.png" width="900" alt="A selected passage with the Revisit Research, Capture, and context actions">
+</p>
+
+<p align="center"><em>Select a passage and decide whether to research it or simply keep it. Beta interface shown.</em></p>
+
+## Save less. Learn more.
+
+Bookmarks are easy to collect and hard to revisit. Revisit preserves the exact idea that caught your attention, along with the page it came from, and gives you a deliberate next step.
+
+- **Research** saves the passage and includes it in your next research briefing.
+- **Capture** keeps the passage in your library without researching it.
+- **+ context** adds an optional question or angle, such as “What have other AI leaders said about this?”
+
+The passage, URL, page title, domain, author, description, and capture time are recorded automatically. Nothing is saved until you click **Research** or **Capture**.
 
 ## How it works
 
-**1. Capture** — Select text in Chrome. An inline `Research | Capture` bubble records the passage, URL, page title, domain, and available metadata. Notes are optional.
+1. **Select something worth keeping.** Highlight text on a webpage and the Revisit actions appear beside it.
+2. **Choose the intent.** Research it, capture it for later, or add a question to guide the research.
+3. **Read the briefing.** Run research on demand and Revisit produces a dated newsletter with your original passage, a focused synthesis, related sources, and a question to keep thinking.
 
-**2. Research** — A queued nightly job independently researches each new `Research` selection using web sources and produces a concise synthesis and follow-up question. Embeddings and clustering are intentionally not part of the production path.
+## From a passage to a briefing
 
-**3. Newsletter** — The web app presents each dated issue with the original selections, research summaries, sources, and prompts to keep thinking. Users can also request an immediate issue with **Run now**.
+<p align="center">
+  <img src="docs/images/revisit-newsletter.png" width="820" alt="The Revisit web app showing a generated research newsletter with a saved passage and synthesis">
+</p>
+
+<p align="center"><em>Your saved passage stays visible alongside the resulting research and sources. Beta interface shown.</em></p>
+
+## What the beta includes
+
+- A Manifest V3 Chrome extension with an inline selection interface
+- One-click Research and Capture modes
+- Optional questions that guide search and synthesis
+- Automatic source metadata collection
+- Google sign-in and private, user-scoped captures
+- On-demand research newsletters with related web sources
+- A web library for reviewing and clearing captures
+- Popup, context-menu, and keyboard capture fallbacks
+
+## Current beta limits
+
+Revisit is being validated as a focused capture-to-newsletter product. The current free test deployment processes newsletters on demand; automatic nightly delivery is not enabled. The extension is distributed as an unpacked beta rather than through the Chrome Web Store, and the free hosting configuration is not intended for important or long-lived data.
+
+Clustering, embeddings, collaboration, billing, Firefox, and mobile clients are intentionally outside the current production path.
+
+## Join the beta
+
+Want to try Revisit or share the research workflow you wish existed?
+
+**[Join the beta waitlist →](https://github.com/JyotBuch/Revisit/issues/new?template=beta-interest.yml)**
+
+The waitlist uses a public GitHub issue. Please do not include private, confidential, or sensitive information.
 
 ---
 
-## Key concepts
+## For developers
 
-| Concept | What it is |
-|---|---|
-| **Capture** | The raw save: a URL, selected text, image, video, or note. Tagged `return` or `casual`. |
-| **Cluster** | Related captures grouped by semantic similarity. The unit the research agent works on. |
-| **Research pass** | An agentic tool-calling loop: search → read full articles → iterate → synthesize. Runs once per `return` cluster per batch. |
-| **Revisit Card** | The output: title, why you saved it, what the research found, what to do next. |
-| **Backlog** | All your cards in one place. Mark each one useful / not useful to tune future research quality. |
+Revisit currently uses FastAPI and Jinja for the web app, PostgreSQL for persistence, a Manifest V3 Chrome extension for capture, Tavily for source discovery, and OpenAI for newsletter synthesis. The checked-in Render Blueprint provides a free testing deployment with inline research jobs.
 
----
+### Run locally
 
-## Quick start (local)
-
-**Prerequisites:** Docker (for Postgres), Python 3.11+
+**Prerequisites:** Docker and Python 3.11+
 
 ```bash
-# 1. Start Postgres with pgvector
 make db-up
-
-# 2. Install dependencies and apply migrations
 make install
-cp .env.example .env   # fill in DATABASE_URL; add OPENAI_API_KEY + TAVILY_API_KEY for research
+cp .env.example .env
 make migrate
-
-# 3. Start the server
 make dev
-# → http://127.0.0.1:8000
 ```
 
-**Try it with demo data:**
+Open `http://127.0.0.1:8000`. Add `OPENAI_API_KEY` and `TAVILY_API_KEY` to `.env` to enable live research; see [the extension setup guide](extension/README.md) to load the Chrome extension locally.
+
+### Tests
 
 ```bash
-make seed-demo          # creates sample captures and runs the batch pipeline
-# open http://127.0.0.1:8000/app/backlog
+make db-test-setup
+make test
 ```
 
----
+Tests use a local PostgreSQL test database and do not require live provider keys.
 
-## The UI
+### Deployment and technical reference
 
-| Page | What you do there |
-|---|---|
-| `/app/capture` | Save a new capture |
-| `/app/backlog` | Read Revisit Cards, submit feedback |
-| `/app/clusters` | Inspect how your captures were grouped |
-| `/app/jobs` | Run the batch pipeline manually, view job history |
-| `/app/metrics` | Pipeline health, card quality, token usage |
-| `/app/telemetry` | Per-run LLM call trace, cost breakdown |
+- [`render.yaml`](render.yaml) documents the free Render testing deployment and required environment variables.
+- [`FUNCTIONALITY.md`](FUNCTIONALITY.md) contains the detailed architecture and legacy pipeline reference.
+- [`PRIVACY.md`](PRIVACY.md) contains the beta privacy notice.
+- [`extension/README.md`](extension/README.md) covers Chrome OAuth and extension packaging.
 
----
+### Adding README images
 
-## The research agent
+Place product screenshots in `docs/images/`, use lowercase descriptive filenames, and optimize them before committing. Reference them with repository-relative paths so they render both locally and on GitHub:
 
-When the batch runs with `generation_method=llm`, a tool-calling agent runs on each `return` cluster:
-
-1. Reads your captures to understand what you were trying to learn
-2. Runs targeted searches (not just the cluster title — it reasons about what to look for)
-3. Reads full articles via `trafilatura`, not just search snippets
-4. Iterates: if a search turns up a useful article that mentions a related angle, it searches that too
-5. Calls `finish()` with structured notes when it has enough
-
-The resulting notes feed directly into the Revisit Card. Each article the agent reads is stored in the database and linked to the card, so you can see exactly what it found.
-
-**Without API keys**, the agent falls back gracefully: no `OPENAI_API_KEY` or `TAVILY_API_KEY` → cards are still generated rule-based. No partial failures.
-
-**Environment variables for the research path:**
-
-| Variable | Required | Default |
-|---|---|---|
-| `OPENAI_API_KEY` | For LLM cards + embeddings | Falls back to fake |
-| `TAVILY_API_KEY` | For web search in the agent | Falls back to fake provider |
-| `OPENAI_RESEARCH_MODEL` | No | `gpt-4o-mini` |
-| `RESEARCH_MAX_ITERATIONS` | No | `6` |
-
----
-
-## Deployment (Render)
-
-The checked-in Blueprint is a **free testing deployment**: one Render web
-service and one temporary Render Postgres database. `Run now` executes research
-in the web process; it does not provision a paid worker or nightly scheduler.
-
-**1.** Push this repo to GitHub.
-
-**2.** In the [Render dashboard](https://dashboard.render.com): New → Blueprint → connect your repo. Render reads `render.yaml` and creates a Python web service and a Postgres database with pgvector.
-
-**3.** Set these secrets in Render's Environment settings:
-
-| Variable | What it is |
-|---|---|
-| `GOOGLE_WEB_CLIENT_ID` | Web OAuth client ID |
-| `GOOGLE_WEB_CLIENT_SECRET` | Web OAuth client secret |
-| `GOOGLE_WEB_REDIRECT_URI` | Exact deployed OAuth callback URL |
-| `GOOGLE_EXTENSION_CLIENT_ID` | Chrome-extension OAuth client ID |
-| `ALLOWED_EXTENSION_ORIGINS` | `chrome-extension://` plus the extension ID |
-| `OPENAI_API_KEY` | Newsletter synthesis |
-| `TAVILY_API_KEY` | Newsletter source search |
-
-**4.** Deploy. Migrations run automatically on startup.
-
-**Free tier limitations:** the web service spins down after inactivity, an
-in-process research task can be interrupted by a restart, there is no automatic
-nightly run, the database has no backups, and free Postgres expires after 30
-days. Upgrade to the dedicated `app.worker` plus `app.scheduler` architecture
-before inviting beta users or storing important data.
-
-**Alternative:** Railway picks up the `Procfile` automatically. Provision a Postgres plugin and enable `pgvector` from the Railway query console.
-
----
-
-## Authentication
-
-Auth is **off by default** so local dev needs no credentials.
-
-Production uses Google OAuth. Username/password login remains a local-development
-fallback only. At minimum, configure:
-
-```bash
-AUTH_ENABLED=true
-GOOGLE_WEB_CLIENT_ID=...
-GOOGLE_WEB_CLIENT_SECRET=...
-GOOGLE_WEB_REDIRECT_URI=https://your-host/api/v1/auth/google/callback
+```markdown
+![Revisit selection interface](docs/images/revisit-selection.png)
 ```
 
-Sessions persist across restarts (stored in the database). Sessions expire after 7 days.
-
----
-
-## Running tests
-
-```bash
-make db-test-setup   # once: creates revisit_test database (requires db-up)
-make test            # pytest tests/
-```
-
-Tests hit a real Postgres database. Fake embeddings are used (no API key needed). All tables are truncated between tests.
-
----
-
-## Browser extension
-
-A Manifest V3 Chrome extension lives in `extension/`. Install it unpacked from `chrome://extensions` during development. Selecting text opens the inline `Research | Capture` bubble; popup, hotkey, and context-menu flows are included as fallbacks. Configure the production backend and Chrome OAuth client as described in `extension/README.md`.
-
----
-
-## Technical reference
-
-For implementation details — schema, algorithm choices, API endpoints, eval harness, telemetry internals — see [FUNCTIONALITY.md](FUNCTIONALITY.md).
+Avoid absolute paths, personal information, credentials, and unnecessarily large source images.
