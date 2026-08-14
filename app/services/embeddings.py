@@ -11,7 +11,7 @@ from app.models.capture import CaptureORM
 from app.models.capture_embedding import EMBEDDING_DIM, CaptureEmbeddingORM
 from app.schemas.capture import Capture
 
-OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+OPENAI_EMBEDDING_MODEL = os.environ.get("OPENAI_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small")
 
 # Only for local development/testing when OPENAI_API_KEY isn't set. This is
 # NOT a real embedding model — vectors are derived from a hash of the input

@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,9 @@ from app import auth
 from app.db import get_db
 from app.models.capture import CaptureORM
 from app.models.job import JobORM
-from app.models.newsletter import NewsletterORM
+from app.models.memory import AgentMemoryORM
+from app.models.newsletter import NewsletterFeedbackORM, NewsletterItemRevisionORM, NewsletterORM
+from app.models.telemetry import AgentStepORM, LlmCallORM, RetrievalEventORM
 from app.models.revisit_card import RevisitCardORM
 from app.models.user import ExtensionTokenORM, IdempotencyKeyORM, UserORM
 from app.schemas.account import (
@@ -25,9 +27,13 @@ from app.schemas.account import (
 from app.schemas.capture import CaptureLabel, CaptureRead, SourceType
 from app.schemas.job import JobRead, JobStatus, JobType
 from app.schemas.newsletter import NewsletterRead
+from app.schemas.memory import (
+    MemoryRead, MemoryUpdate, NewsletterFeedbackCreate, NewsletterFeedbackRead, RevisionRead,
+)
 from app.schemas.revisit_card import RevisitCardRead
+from app.services import memory as memory_service
 from app.services import resource_store
-from app.services.inline_research import run_inline_research_job
+from app.services.inline_research import run_inline_research_job, run_inline_revision_job
 
 router = APIRouter(prefix="/api/v1", tags=["public-api"])
 
@@ -98,6 +104,55 @@ def update_me(
     db.commit()
     db.refresh(row)
     return MeRead.model_validate(row, from_attributes=True)
+
+
+@router.get("/me/export")
+def export_account(
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> dict:
+    captures = db.scalars(select(CaptureORM).where(CaptureORM.user_id == user.id)).all()
+    newsletters = db.scalars(select(NewsletterORM).where(NewsletterORM.user_id == user.id)).all()
+    feedback = db.scalars(select(NewsletterFeedbackORM).where(NewsletterFeedbackORM.user_id == user.id)).all()
+    memories = db.scalars(select(AgentMemoryORM).where(
+        AgentMemoryORM.user_id == user.id,
+    ).order_by(AgentMemoryORM.created_at)).all()
+    revisions = db.scalars(select(NewsletterItemRevisionORM).where(NewsletterItemRevisionORM.user_id == user.id)).all()
+    llm_calls = db.scalars(select(LlmCallORM).where(LlmCallORM.user_id == user.id)).all()
+    steps = db.scalars(select(AgentStepORM).where(AgentStepORM.user_id == user.id)).all()
+    retrievals = db.scalars(select(RetrievalEventORM).where(RetrievalEventORM.user_id == user.id)).all()
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "account": MeRead.model_validate(user, from_attributes=True).model_dump(mode="json"),
+        "captures": [CaptureRead.model_validate(row, from_attributes=True).model_dump(mode="json") for row in captures],
+        "newsletters": [_newsletter_read(row, db).model_dump(mode="json") for row in newsletters],
+        "feedback": [_feedback_read(row).model_dump(mode="json") for row in feedback],
+        "memories": [_memory_read(row).model_dump(mode="json") for row in memories],
+        "revisions": [{"id": row.id, "newsletter_id": row.newsletter_id, "capture_id": row.capture_id,
+                       "version": row.version, "status": row.status, "content": row.content_json} for row in revisions],
+        "telemetry": {
+            "llm_calls": [{"id": row.id, "job_id": row.job_id, "purpose": row.purpose,
+                           "model": row.model_name, "tokens": row.total_tokens, "cost_usd": row.estimated_cost_usd,
+                           "status": row.status, "created_at": row.created_at.isoformat()} for row in llm_calls],
+            "agent_steps": [{"id": row.id, "job_id": row.job_id, "step": row.step_name,
+                             "status": row.status, "created_at": row.started_at.isoformat()} for row in steps],
+            "retrieval_events": [{"id": row.id, "job_id": row.job_id, "provider": row.provider,
+                                  "status": row.status, "created_at": row.created_at.isoformat()} for row in retrievals],
+        },
+    }
+
+
+@router.delete("/me", status_code=204)
+def delete_account(
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> Response:
+    row = db.get(UserORM, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    db.delete(row)
+    db.commit()
+    response = Response(status_code=204)
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return response
 
 
 @router.post("/captures", response_model=CaptureRead, status_code=201)
@@ -182,10 +237,31 @@ def list_cards(
     ) for row in rows]
 
 
-def _newsletter_read(row: NewsletterORM) -> NewsletterRead:
+def _newsletter_read(row: NewsletterORM, db: Session) -> NewsletterRead:
+    revisions = db.scalars(select(NewsletterItemRevisionORM).where(
+        NewsletterItemRevisionORM.newsletter_id == row.id,
+    ).order_by(NewsletterItemRevisionORM.capture_id, NewsletterItemRevisionORM.version)).all()
+    by_capture: dict[str, list[NewsletterItemRevisionORM]] = {}
+    for revision in revisions:
+        by_capture.setdefault(revision.capture_id, []).append(revision)
+    items = []
+    for original in row.items_json:
+        item = dict(original)
+        history = by_capture.get(item.get("capture_id"), [])
+        succeeded = [revision for revision in history if revision.status == "succeeded" and revision.content_json]
+        if succeeded:
+            latest = succeeded[-1]
+            item.update(latest.content_json)
+            item["revision_id"] = latest.id
+            item["revision_version"] = latest.version
+        item["revision_history"] = [
+            {"id": revision.id, "version": revision.version, "status": revision.status,
+             "created_at": revision.created_at.isoformat()} for revision in history
+        ]
+        items.append(item)
     return NewsletterRead(
         id=row.id, subject=row.subject, introduction=row.introduction,
-        items=row.items_json, created_at=row.created_at,
+        items=items, created_at=row.created_at,
     )
 
 
@@ -196,7 +272,7 @@ def list_newsletters(
     rows = db.scalars(select(NewsletterORM).where(
         NewsletterORM.user_id == user.id
     ).order_by(NewsletterORM.created_at.desc())).all()
-    return [_newsletter_read(row) for row in rows]
+    return [_newsletter_read(row, db) for row in rows]
 
 
 @router.get("/newsletters/{newsletter_id}", response_model=NewsletterRead)
@@ -208,7 +284,201 @@ def get_newsletter(
     ))
     if row is None:
         raise HTTPException(status_code=404, detail="Newsletter not found")
-    return _newsletter_read(row)
+    return _newsletter_read(row, db)
+
+
+def _feedback_read(row: NewsletterFeedbackORM) -> NewsletterFeedbackRead:
+    return NewsletterFeedbackRead(
+        id=row.id, newsletter_id=row.newsletter_id, capture_id=row.capture_id,
+        level=row.level, sentiment=row.sentiment, comment=row.comment, created_at=row.created_at,
+    )
+
+
+def _owned_newsletter(db: Session, newsletter_id: str, user_id: str) -> NewsletterORM:
+    row = db.scalar(select(NewsletterORM).where(
+        NewsletterORM.id == newsletter_id, NewsletterORM.user_id == user_id,
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Newsletter not found")
+    return row
+
+
+def _duplicate_feedback(
+    db: Session, *, user_id: str, newsletter_id: str, capture_id: str | None,
+    sentiment: str, comment: str | None,
+) -> NewsletterFeedbackORM | None:
+    return db.scalar(select(NewsletterFeedbackORM).where(
+        NewsletterFeedbackORM.user_id == user_id,
+        NewsletterFeedbackORM.newsletter_id == newsletter_id,
+        NewsletterFeedbackORM.capture_id.is_(None) if capture_id is None
+        else NewsletterFeedbackORM.capture_id == capture_id,
+        NewsletterFeedbackORM.sentiment == sentiment,
+        func.coalesce(NewsletterFeedbackORM.comment, "") == (comment or ""),
+    ).order_by(NewsletterFeedbackORM.created_at.desc()))
+
+
+@router.post("/newsletters/{newsletter_id}/feedback", response_model=NewsletterFeedbackRead, status_code=201)
+def create_newsletter_feedback(
+    newsletter_id: str, body: NewsletterFeedbackCreate, background_tasks: BackgroundTasks,
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> NewsletterFeedbackRead:
+    _owned_newsletter(db, newsletter_id, user.id)
+    comment = (body.comment or "").strip() or None
+    existing = _duplicate_feedback(
+        db, user_id=user.id, newsletter_id=newsletter_id, capture_id=None,
+        sentiment=body.sentiment, comment=comment,
+    )
+    if existing:
+        return _feedback_read(existing)
+    row = NewsletterFeedbackORM(
+        id=str(uuid.uuid4()), user_id=user.id, newsletter_id=newsletter_id,
+        level="newsletter", sentiment=body.sentiment, comment=comment,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    background_tasks.add_task(memory_service.process_feedback_memory, row.id, user.id)
+    return _feedback_read(row)
+
+
+@router.post("/newsletters/{newsletter_id}/items/{capture_id}/feedback", response_model=NewsletterFeedbackRead, status_code=201)
+def create_item_feedback(
+    newsletter_id: str, capture_id: str, body: NewsletterFeedbackCreate,
+    background_tasks: BackgroundTasks, user: UserORM = Depends(auth.current_user),
+    db: Session = Depends(get_db),
+) -> NewsletterFeedbackRead:
+    newsletter = _owned_newsletter(db, newsletter_id, user.id)
+    if not any(item.get("capture_id") == capture_id for item in newsletter.items_json):
+        raise HTTPException(status_code=404, detail="Newsletter item not found")
+    comment = (body.comment or "").strip() or None
+    existing = _duplicate_feedback(
+        db, user_id=user.id, newsletter_id=newsletter_id, capture_id=capture_id,
+        sentiment=body.sentiment, comment=comment,
+    )
+    if existing:
+        return _feedback_read(existing)
+    row = NewsletterFeedbackORM(
+        id=str(uuid.uuid4()), user_id=user.id, newsletter_id=newsletter_id,
+        capture_id=capture_id, level="item", sentiment=body.sentiment,
+        comment=comment,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    background_tasks.add_task(memory_service.process_feedback_memory, row.id, user.id)
+    return _feedback_read(row)
+
+
+@router.post("/newsletters/{newsletter_id}/items/{capture_id}/retry", response_model=JobRead, status_code=202)
+def retry_newsletter_item(
+    newsletter_id: str, capture_id: str, background_tasks: BackgroundTasks,
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> JobRead:
+    if os.environ.get("NEWSLETTER_REVISIONS_ENABLED", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not found")
+    newsletter = _owned_newsletter(db, newsletter_id, user.id)
+    if not any(item.get("capture_id") == capture_id for item in newsletter.items_json):
+        raise HTTPException(status_code=404, detail="Newsletter item not found")
+    feedback = db.scalar(select(NewsletterFeedbackORM).where(
+        NewsletterFeedbackORM.user_id == user.id,
+        NewsletterFeedbackORM.newsletter_id == newsletter_id,
+        NewsletterFeedbackORM.capture_id == capture_id,
+        NewsletterFeedbackORM.sentiment == "not_useful",
+    ).order_by(NewsletterFeedbackORM.created_at.desc()))
+    if feedback is None:
+        raise HTTPException(status_code=409, detail="Add not-useful feedback before trying again")
+    active = db.scalar(select(NewsletterItemRevisionORM).where(
+        NewsletterItemRevisionORM.newsletter_id == newsletter_id,
+        NewsletterItemRevisionORM.capture_id == capture_id,
+        NewsletterItemRevisionORM.status.in_(["queued", "running"]),
+    ))
+    if active:
+        return JobRead.model_validate(db.get(JobORM, active.job_id), from_attributes=True)
+    version = int(db.scalar(select(func.max(NewsletterItemRevisionORM.version)).where(
+        NewsletterItemRevisionORM.newsletter_id == newsletter_id,
+        NewsletterItemRevisionORM.capture_id == capture_id,
+    )) or 0) + 1
+    job = JobORM(
+        id=str(uuid.uuid4()), user_id=user.id, job_type=JobType.item_revision,
+        status=JobStatus.queued, summary_json={},
+    )
+    revision = NewsletterItemRevisionORM(
+        id=str(uuid.uuid4()), user_id=user.id, newsletter_id=newsletter_id,
+        capture_id=capture_id, feedback_id=feedback.id, job_id=job.id,
+        version=version, status="queued",
+    )
+    job.summary_json = {"revision_id": revision.id}
+    db.add_all([job, revision])
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A retry is already running") from exc
+    db.refresh(job)
+    if os.environ.get("INLINE_RESEARCH_JOBS", "false").lower() == "true":
+        background_tasks.add_task(run_inline_revision_job, job.id, revision.id, user.id)
+    return JobRead.model_validate(job, from_attributes=True)
+
+
+def _memory_read(row: AgentMemoryORM) -> MemoryRead:
+    return MemoryRead(
+        id=row.id, memory_type=row.memory_type, canonical_key=row.canonical_key,
+        summary=row.summary, value=row.value_json, confidence=row.confidence,
+        status=row.status, provenance_type=row.provenance_type,
+        source_links=row.source_links_json, version=row.version,
+        observed_at=row.observed_at, stale_at=row.stale_at, last_used_at=row.last_used_at,
+        created_at=row.created_at, updated_at=row.updated_at,
+    )
+
+
+@router.get("/memories", response_model=list[MemoryRead])
+def list_memories(
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> list[MemoryRead]:
+    return [_memory_read(row) for row in memory_service.list_memories(db, user.id)]
+
+
+@router.patch("/memories/{memory_id}", response_model=MemoryRead)
+def update_memory(
+    memory_id: str, body: MemoryUpdate, user: UserORM = Depends(auth.current_user),
+    db: Session = Depends(get_db),
+) -> MemoryRead:
+    row = db.scalar(select(AgentMemoryORM).where(
+        AgentMemoryORM.id == memory_id, AgentMemoryORM.user_id == user.id,
+        AgentMemoryORM.status.in_(["active", "disabled"]),
+    ))
+    if row is None or row.memory_type == "episodic":
+        raise HTTPException(status_code=404, detail="Editable memory not found")
+    updated = memory_service.revise_memory(
+        db, row, summary=body.summary, value=body.value, status=body.status,
+    )
+    db.commit()
+    db.refresh(updated)
+    return _memory_read(updated)
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+def delete_memory(
+    memory_id: str, user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> Response:
+    row = db.scalar(select(AgentMemoryORM).where(
+        AgentMemoryORM.id == memory_id, AgentMemoryORM.user_id == user.id,
+        AgentMemoryORM.status.in_(["active", "disabled"]),
+    ))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    memory_service.forget_memory(db, row)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/memories", status_code=204)
+def reset_memories(
+    user: UserORM = Depends(auth.current_user), db: Session = Depends(get_db),
+) -> Response:
+    memory_service.reset_memories(db, user.id)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/jobs/research", response_model=JobRead, status_code=202)

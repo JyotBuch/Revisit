@@ -44,6 +44,20 @@ services:
       # This is not durable across process restarts; use app.worker in production.
       - key: INLINE_RESEARCH_JOBS
         value: true
+      - key: AGENT_TELEMETRY_ENABLED
+        value: true
+      - key: AGENT_MEMORY_WRITE_ENABLED
+        value: true
+      - key: AGENT_MEMORY_READ_ENABLED
+        value: true
+      - key: NEWSLETTER_REVISIONS_ENABLED
+        value: true
+      - key: TELEMETRY_RETENTION_DAYS
+        value: 30
+      - key: TELEMETRY_HASH_SECRET
+        generateValue: true
+      - key: ADMIN_EMAILS
+        sync: false
 
       # OpenAI — optional; embeddings + LLM card generation fall back to
       # rule-based/fake if unset.
@@ -51,6 +65,10 @@ services:
         sync: false   # set in Render dashboard
       - key: OPENAI_REVISIT_CARD_MODEL
         value: gpt-4o-mini
+      - key: OPENAI_RESEARCH_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_MEMORY_EMBEDDING_MODEL
+        value: text-embedding-3-small
 
       # Web search for related resources — optional.
       # Set SEARCH_PROVIDER=tavily and TAVILY_API_KEY=<key> to enable real search.

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.auth import require_auth
+from app.auth import require_operator
 from app.models.telemetry import LlmCallORM
 from app.services import telemetry as telemetry_service
 
@@ -41,12 +41,16 @@ class LlmCallRow(BaseModel):
     latency_ms: Optional[int]
     status: str
     failure_type: Optional[str]
+    provider_request_id: Optional[str]
+    finish_reason: Optional[str]
+    request_hash: Optional[str]
+    response_hash: Optional[str]
+    response_excerpt: Optional[str]
     created_at: str
 
 
-def _internal(_=Depends(require_auth)):
-    if os.environ.get("ENVIRONMENT") == "production":
-        raise HTTPException(status_code=404, detail="Not found")
+def _internal(_=Depends(require_operator)):
+    return None
 
 
 @router.get("/summary", response_model=TelemetrySummary)
@@ -84,6 +88,11 @@ def list_llm_calls(
             latency_ms=r.latency_ms,
             status=r.status,
             failure_type=r.failure_type,
+            provider_request_id=r.provider_request_id,
+            finish_reason=r.finish_reason,
+            request_hash=r.request_hash,
+            response_hash=r.response_hash,
+            response_excerpt=r.response_excerpt,
             created_at=r.created_at.isoformat(),
         )
         for r in rows

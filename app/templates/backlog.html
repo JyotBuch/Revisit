@@ -15,16 +15,43 @@ async function loadIssues() {
   try {
     const issues = await api('GET', '/api/v1/newsletters');
     if (!issues.length) { area.innerHTML = '<div class="card"><h2>No issue yet</h2><p>Mark passages as Research in the extension, then click Run now. Captures stay saved without entering the research newsletter.</p></div>'; return; }
-    area.innerHTML = issues.map(issue => `<article class="card">
-      <div class="meta">${fmtDate(issue.created_at)}</div><h2>${safe(issue.subject)}</h2><p>${safe(issue.introduction)}</p>
-      ${issue.items.map(item => `<section style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
-        <h3>${safe(item.title)}</h3><blockquote style="margin:.7rem 0;padding:.7rem 1rem;border-left:3px solid var(--accent);color:var(--text-muted)">${safe(item.saved_text)}</blockquote>
-        ${item.research_question ? `<div class="field-block"><div class="section-label">Your question</div><div class="body-text">${safe(item.research_question)}</div></div>` : ''}
-        <div class="section-label">What the research says</div><div class="body-text">${safe(item.research_summary)}</div>
-        ${item.sources.length ? `<div class="field-block"><div class="section-label">Sources</div><ul class="resource-list">${item.sources.map(source => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${safe(source.title)}</a></li>`).join('')}</ul></div>` : ''}
-        <div class="field-block"><div class="section-label">Keep thinking</div><div class="body-text">${safe(item.next_question)}</div></div>
-      </section>`).join('')}</article>`).join('');
+    area.innerHTML = issues.map(issue => {
+      const article = `<article class="card">
+        <div class="meta">${fmtDate(issue.created_at)}</div><h2>${safe(issue.subject)}</h2><p>${safe(issue.introduction)}</p>
+        ${issue.items.map(item => `<section id="item-${safe(item.capture_id)}" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
+          <h3>${safe(item.title)}</h3><blockquote style="margin:.7rem 0;padding:.7rem 1rem;border-left:3px solid var(--accent);color:var(--text-muted)">${safe(item.saved_text)}</blockquote>
+          ${item.research_question ? `<div class="field-block"><div class="section-label">Your question</div><div class="body-text">${safe(item.research_question)}</div></div>` : ''}
+          <div class="section-label">What the research says</div><div class="body-text">${safe(item.research_summary)}</div>
+          ${item.sources.length ? `<div class="field-block"><div class="section-label">Sources</div><ul class="resource-list">${item.sources.map(source => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${safe(source.title)}</a></li>`).join('')}</ul></div>` : ''}
+          <div class="field-block"><div class="section-label">Keep thinking</div><div class="body-text">${safe(item.next_question)}</div></div>
+          ${item.revision_version ? `<div class="meta" style="margin-top:.75rem">Revised version ${item.revision_version}</div>` : ''}
+          <div class="toolbar" style="margin-top:1rem"><span class="meta">Was this useful?</span><button class="btn btn-secondary btn-sm" onclick="itemFeedback('${issue.id}','${item.capture_id}','useful')">Yes</button><button class="btn btn-secondary btn-sm" onclick="itemFeedback('${issue.id}','${item.capture_id}','not_useful')">Not really</button><span id="feedback-${item.capture_id}"></span></div>
+        </section>`).join('')}
+        <div class="toolbar" style="margin-top:1.5rem"><span class="meta">Useful newsletter overall?</span><button class="btn btn-secondary btn-sm" onclick="newsletterFeedback('${issue.id}','useful')">Yes</button><button class="btn btn-secondary btn-sm" onclick="newsletterFeedback('${issue.id}','not_useful')">Not really</button></div>
+      </article>`;
+      return article;
+    }).join('');
   } catch (error) { area.innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`; }
+}
+async function itemFeedback(newsletterId, captureId, sentiment) {
+  const comment = sentiment === 'not_useful' ? prompt('What was missing or how should future research change?') : null;
+  if (sentiment === 'not_useful' && !comment?.trim()) return;
+  await api('POST', `/api/v1/newsletters/${encodeURIComponent(newsletterId)}/items/${encodeURIComponent(captureId)}/feedback`, {sentiment, comment});
+  const status = document.getElementById(`feedback-${captureId}`);
+  if (sentiment === 'useful') status.innerHTML = '<span class="tag tag-success">Learned</span>';
+  else status.innerHTML = `<button class="btn btn-primary btn-sm" onclick="retryItem('${newsletterId}','${captureId}')">Learn and try again</button>`;
+}
+async function newsletterFeedback(newsletterId, sentiment) {
+  const comment = sentiment === 'not_useful' ? prompt('What should be different about future newsletters?') : null;
+  if (sentiment === 'not_useful' && !comment?.trim()) return;
+  await api('POST', `/api/v1/newsletters/${encodeURIComponent(newsletterId)}/feedback`, {sentiment, comment});
+  document.getElementById('alert-area').innerHTML = '<div class="alert alert-success">Thanks — Revisit will learn from that.</div>';
+}
+async function retryItem(newsletterId, captureId) {
+  const job = await api('POST', `/api/v1/newsletters/${encodeURIComponent(newsletterId)}/items/${encodeURIComponent(captureId)}/retry`);
+  document.getElementById('alert-area').innerHTML = '<div class="alert alert-info">Trying that research again…</div>';
+  await waitForJob(job.id, document.getElementById('alert-area'));
+  await loadIssues();
 }
 async function runNow() {
   const button = document.getElementById('run'); button.disabled = true;
@@ -43,7 +70,10 @@ async function waitForJob(jobId, alertArea) {
   while (Date.now() < deadline) {
     const job = await api('GET', `/api/v1/jobs/${encodeURIComponent(jobId)}`);
     if (job.status === 'succeeded') {
-      if (job.summary_json?.newsletter_created) {
+      if (job.summary_json?.revision_created) {
+        alertArea.innerHTML = '<div class="alert alert-success">Revised research ready.</div>';
+        await loadIssues();
+      } else if (job.summary_json?.newsletter_created) {
         alertArea.innerHTML = '<div class="alert alert-success">Newsletter ready.</div>';
         await loadIssues();
       } else {

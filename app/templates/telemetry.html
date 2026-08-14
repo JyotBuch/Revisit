@@ -84,6 +84,7 @@ async function loadLlmCalls() {
         <td>${c.latency_ms != null ? c.latency_ms + ' ms' : '—'}</td>
         <td class="meta">${escHtml(c.owner_type || '')} ${escHtml(c.owner_id ? c.owner_id.slice(0,8) + '…' : '')}</td>
         <td class="meta">${fmtDate(c.created_at)}</td>
+        <td class="meta" style="max-width:320px">${escHtml(c.response_excerpt || '')}</td>
       </tr>`;
     }).join('');
     area.innerHTML = `
@@ -101,6 +102,7 @@ async function loadLlmCalls() {
                 <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Latency</th>
                 <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Owner</th>
                 <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">When</th>
+                <th style="text-align:left;padding:.3rem .5rem;color:var(--text-muted);font-size:.8rem">Redacted response excerpt</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>

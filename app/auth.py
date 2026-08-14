@@ -192,3 +192,14 @@ def current_user(request: Request) -> UserORM:
         return user
     finally:
         db.close()
+
+
+def require_operator(request: Request) -> UserORM | None:
+    """Allow configured beta operators without exposing admin-route existence."""
+    if os.environ.get("ENVIRONMENT") != "production" and not auth_enabled():
+        return None
+    user = current_user(request)
+    allowed = {email.strip().lower() for email in os.environ.get("ADMIN_EMAILS", "").split(",") if email.strip()}
+    if user.email.lower() not in allowed:
+        raise HTTPException(status_code=404, detail="Not found")
+    return user

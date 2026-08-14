@@ -14,8 +14,8 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models.job import JobORM
-from app.schemas.job import JobStatus
-from app.services.newsletter import run_newsletter_batch
+from app.schemas.job import JobStatus, JobType
+from app.services.newsletter import run_item_revision, run_newsletter_batch
 
 logger = logging.getLogger("revisit.worker")
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -85,7 +85,13 @@ def run_forever() -> None:
             continue
         db, job = claimed
         try:
-            run_newsletter_batch(db, user_id=job.user_id, job_id=job.id)
+            if job.job_type == JobType.item_revision:
+                revision_id = (job.summary_json or {}).get("revision_id")
+                if not revision_id:
+                    raise ValueError("Revision job is missing revision_id")
+                run_item_revision(db, revision_id=revision_id, user_id=job.user_id)
+            else:
+                run_newsletter_batch(db, user_id=job.user_id, job_id=job.id)
         except Exception:
             logger.exception("research_job_failed job_id=%s", job.id)
         finally:

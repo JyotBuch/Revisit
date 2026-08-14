@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.auth import auth_enabled, require_ui_auth
+from app.auth import auth_enabled, require_operator, require_ui_auth
 
 router = APIRouter(prefix="/app", tags=["ui"])
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
@@ -45,5 +45,10 @@ def metrics_page(request: Request, _: None = Depends(require_ui_auth)) -> HTMLRe
 
 
 @router.get("/telemetry", response_class=HTMLResponse)
-def telemetry_page(request: Request, _: None = Depends(require_ui_auth)) -> HTMLResponse:
+def telemetry_page(request: Request, _=Depends(require_operator)) -> HTMLResponse:
     return templates.TemplateResponse(request, "telemetry.html", _ctx(request))
+
+
+@router.get("/memory", response_class=HTMLResponse)
+def memory_page(request: Request, _: None = Depends(require_ui_auth)) -> HTMLResponse:
+    return templates.TemplateResponse(request, "memory.html", _ctx(request))

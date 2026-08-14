@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class JobType(str, Enum):
     daily_batch = "daily_batch"
+    item_revision = "item_revision"
 
 
 class JobStatus(str, Enum):

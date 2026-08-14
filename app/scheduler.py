@@ -10,12 +10,18 @@ from app.db import SessionLocal
 from app.models.job import JobORM
 from app.models.user import UserORM
 from app.schemas.job import JobStatus, JobType
+from app.services import telemetry
 
 
 def enqueue_due() -> int:
     db = SessionLocal()
     count = 0
     try:
+        if telemetry.enabled():
+            try:
+                telemetry.purge_expired(db)
+            except Exception:
+                db.rollback()
         now = datetime.now(timezone.utc)
         users = db.scalars(select(UserORM).where(UserORM.nightly_research_enabled.is_(True))).all()
         for user in users:

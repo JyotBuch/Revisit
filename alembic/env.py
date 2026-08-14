@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401  (registers ORM classes on Base)
     capture_embedding,
     cluster,
     job,
+    memory,
     newsletter,
     resource,
     revisit_card,

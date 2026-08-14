@@ -18,6 +18,18 @@ Revisit is a Chrome research companion that captures selected text in one click 
 
 <p align="center"><em>Select a passage and decide whether to research it or simply keep it. Beta interface shown.</em></p>
 
+## See Revisit in action
+
+<p align="center">
+  <a href="docs/videos/revisit.mp4">
+    <img src="docs/images/revisit-selection.png" width="760" alt="Watch a short demonstration of selecting and researching a passage with Revisit">
+  </a>
+</p>
+
+<p align="center"><strong><a href="docs/videos/revisit.mp4">Watch the 43-second product demo →</a></strong></p>
+
+<p align="center"><em>See the beta workflow from selecting a passage through generating its research newsletter.</em></p>
+
 ## Save less. Learn more.
 
 Bookmarks are easy to collect and hard to revisit. Revisit preserves the exact idea that caught your attention, along with the page it came from, and gives you a deliberate next step.
@@ -103,7 +115,7 @@ Tests use a local PostgreSQL test database and do not require live provider keys
 - [`PRIVACY.md`](PRIVACY.md) contains the beta privacy notice.
 - [`extension/README.md`](extension/README.md) covers Chrome OAuth and extension packaging.
 
-### Adding README images
+### Adding README media
 
 Place product screenshots in `docs/images/`, use lowercase descriptive filenames, and optimize them before committing. Reference them with repository-relative paths so they render both locally and on GitHub:
 
@@ -111,4 +123,4 @@ Place product screenshots in `docs/images/`, use lowercase descriptive filenames
 ![Revisit selection interface](docs/images/revisit-selection.png)
 ```
 
-Avoid absolute paths, personal information, credentials, and unnecessarily large source images.
+Place short product videos in `docs/videos/` and link to them from a screenshot or descriptive text. Avoid absolute paths, personal information, credentials, and unnecessarily large media files.

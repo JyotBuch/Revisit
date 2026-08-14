@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Memory — Revisit{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div><h1 style="margin:0">What Revisit remembers</h1><p class="meta">Review, correct, disable, or forget the context that personalizes your research.</p></div>
+  <button class="btn btn-danger btn-sm" onclick="resetMemory()">Forget everything</button>
+</div>
+<div id="alert-area"></div>
+<div id="memories"><p class="loading">Loading…</p></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const safe = value => String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+async function loadMemories() {
+  const area = document.getElementById('memories');
+  try {
+    const memories = await api('GET', '/api/v1/memories');
+    if (!memories.length) {
+      area.innerHTML = '<div class="card"><h2>No learned memory yet</h2><p>Feedback on research newsletters will appear here as editable preferences and context.</p></div>';
+      return;
+    }
+    const groups = ['procedural', 'semantic', 'episodic'];
+    area.innerHTML = groups.map(type => {
+      const rows = memories.filter(memory => memory.memory_type === type);
+      if (!rows.length) return '';
+      return `<section style="margin-bottom:2rem"><h2>${safe(type[0].toUpperCase() + type.slice(1))} memory</h2>${rows.map(memory => `
+        <article class="card" style="margin-bottom:.75rem;opacity:${memory.status === 'disabled' ? '.6' : '1'}">
+          <div class="meta">${safe(memory.provenance_type)} · confidence ${Math.round(memory.confidence * 100)}% · v${memory.version}</div>
+          <p id="summary-${memory.id}">${safe(memory.summary)}</p>
+          <div class="toolbar" style="margin:0">
+            ${type !== 'episodic' ? `<button class="btn btn-secondary btn-sm" onclick="editMemory('${memory.id}')">Edit</button><button class="btn btn-secondary btn-sm" onclick="toggleMemory('${memory.id}','${memory.status === 'disabled' ? 'active' : 'disabled'}')">${memory.status === 'disabled' ? 'Enable' : 'Disable'}</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="forgetMemory('${memory.id}')">Forget</button>
+          </div>
+        </article>`).join('')}</section>`;
+    }).join('');
+  } catch (error) { area.innerHTML = `<div class="alert alert-error">${safe(error.message)}</div>`; }
+}
+async function editMemory(id) {
+  const current = document.getElementById(`summary-${id}`).textContent;
+  const summary = prompt('How should Revisit remember this?', current);
+  if (!summary || summary === current) return;
+  await api('PATCH', `/api/v1/memories/${encodeURIComponent(id)}`, {summary});
+  await loadMemories();
+}
+async function toggleMemory(id, status) {
+  await api('PATCH', `/api/v1/memories/${encodeURIComponent(id)}`, {status});
+  await loadMemories();
+}
+async function forgetMemory(id) {
+  if (!confirm('Forget this memory?')) return;
+  await api('DELETE', `/api/v1/memories/${encodeURIComponent(id)}`);
+  await loadMemories();
+}
+async function resetMemory() {
+  if (!confirm('Forget all personalization and research memory? This cannot be undone.')) return;
+  await api('DELETE', '/api/v1/memories');
+  document.getElementById('alert-area').innerHTML = '<div class="alert alert-success">All memory was forgotten.</div>';
+  await loadMemories();
+}
+loadMemories();
+</script>
+{% endblock %}
