@@ -51,6 +51,23 @@ def test_public_capture_lists_only_current_user(client, db):
     app.dependency_overrides.pop(auth.current_user, None)
 
 
+def test_clear_captures_deletes_only_current_users_rows(client, db):
+    user, other = make_user(db), make_user(db, "clear-other@example.com")
+    mine = CaptureORM(id=str(uuid.uuid4()), user_id=user.id, source_type=SourceType.note, user_note="mine", label=CaptureLabel.casual)
+    theirs = CaptureORM(id=str(uuid.uuid4()), user_id=other.id, source_type=SourceType.note, user_note="theirs", label=CaptureLabel.casual)
+    db.add_all([mine, theirs])
+    db.commit()
+    app.dependency_overrides[auth.current_user] = lambda: user
+
+    response = client.delete("/api/v1/captures")
+
+    assert response.status_code == 204
+    db.expire_all()
+    assert db.get(CaptureORM, mine.id) is None
+    assert db.get(CaptureORM, theirs.id) is not None
+    app.dependency_overrides.pop(auth.current_user, None)
+
+
 def test_newsletter_uses_research_captures_only(db, monkeypatch):
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.delenv("SEARCH_API_KEY", raising=False)

@@ -302,6 +302,7 @@
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail));
       }
+      if (res.status === 204) return null;
       return res.json();
     }
 
