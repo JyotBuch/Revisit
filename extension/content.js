@@ -17,14 +17,14 @@
     return node && !node.closest('input, textarea, [contenteditable="true"], [role="textbox"]');
   }
 
-  function payload(mode, note = "") {
+  function payload(mode, note = "", idempotencyKey = crypto.randomUUID()) {
     return {
       source_type: selectionText ? "passage" : "article",
       selected_text: selectionText || null,
       url: canonicalUrl(), title: document.title || null, domain: location.hostname,
       description: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
       author: meta('meta[name="author"]'), user_note: note || null,
-      captured_at: new Date().toISOString(), mode, idempotency_key: crypto.randomUUID()
+      captured_at: new Date().toISOString(), mode, idempotency_key: idempotencyKey
     };
   }
 
@@ -44,13 +44,14 @@
       .box.complete button,.box.complete input{display:none}.box.complete .status{font-weight:700;font-size:13px;padding:4px 9px}
     </style><div class="box"><button class="research">Research</button><button class="capture">Capture</button><button class="note" title="Add optional context">+ context</button><input maxlength="1000" placeholder="Optional context"><span class="status"></span></div>`;
     const box = root.querySelector(".box");
+    const idempotencyKey = crypto.randomUUID();
     root.querySelector(".note").onclick = () => { box.classList.add("with-note"); root.querySelector("input").focus(); };
     for (const mode of ["research", "capture"]) root.querySelector(`.${mode}`).onclick = async () => {
       if (busy) return; busy = true;
       root.querySelectorAll("button").forEach(button => button.disabled = true);
       renderStatus(root, "Saving…");
       try {
-        const result = await chrome.runtime.sendMessage({ type: "REVISIT_SAVE", payload: payload(mode, root.querySelector("input").value) });
+        const result = await chrome.runtime.sendMessage({ type: "REVISIT_SAVE", payload: payload(mode, root.querySelector("input").value, idempotencyKey) });
         if (result?.ok) {
           box.classList.add("complete");
           renderStatus(root, mode === "research" ? "✓ Sent to Research" : "✓ Captured", "ok");
@@ -69,14 +70,17 @@
     document.documentElement.appendChild(host);
   }
 
-  document.addEventListener("mouseup", event => setTimeout(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
-    const range = selection.getRangeAt(0);
-    if (!selectionAllowed(range)) return remove();
-    rect = range.getBoundingClientRect();
-    show(window.scrollX + Math.min(rect.right, innerWidth - 270), window.scrollY + rect.bottom + 8, selection.toString().trim());
-  }, 0), true);
+  document.addEventListener("mouseup", event => {
+    if (host && event.composedPath().includes(host)) return;
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
+      const range = selection.getRangeAt(0);
+      if (!selectionAllowed(range)) return remove();
+      rect = range.getBoundingClientRect();
+      show(window.scrollX + Math.min(rect.right, innerWidth - 270), window.scrollY + rect.bottom + 8, selection.toString().trim());
+    }, 0);
+  }, true);
   document.addEventListener("mousedown", event => { if (host && !event.composedPath().includes(host)) remove(); }, true);
   document.addEventListener("keydown", event => { if (event.key === "Escape") remove(); }, true);
   window.addEventListener("pagehide", remove);
