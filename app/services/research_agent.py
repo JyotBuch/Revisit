@@ -4,13 +4,13 @@ Runs a tool-calling loop using the OpenAI SDK: the model decides what to
 search, which articles to read in full, and when it has enough to call
 finish() with structured research notes.
 
-The loop is the replacement for the single-Tavily-search + keyword-validation
+The loop is the replacement for the single-search + keyword-validation
 path when generation_method=llm and both OPENAI_API_KEY and a search key are
 configured. When either key is absent, run_research() returns None and the
 batch job falls back to the existing retrieval path.
 
 Tools exposed to the model:
-  search_web(query, max_results) — Tavily search, returns title/url/snippet
+  search_web(query, max_results) — OpenAI web search, returns title/url/snippet
   read_article(url)              — fetches full article text, stores as resource
   finish(...)                    — terminates the loop, returns ResearchNotes
 """
@@ -31,7 +31,7 @@ from app.models.cluster import ClusterORM
 from app.schemas.resource import Resource, ResourceCandidate
 from app.services import resource_store, telemetry
 from app.services.langfuse_client import get_langfuse
-from app.services.retrieval import _get_api_key, _tavily_search
+from app.services.openai_search import OPENAI_SEARCH_PROVIDER, search_web
 
 logger = logging.getLogger("revisit.research_agent")
 
@@ -238,11 +238,11 @@ def _fetch_article_content(url: str, timeout: int = 15) -> Optional[str]:
 
 
 def _execute_search_web(query: str, max_results: int) -> Dict[str, Any]:
-    api_key = _get_api_key("tavily")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return {"error": "no_search_api_key_configured", "results": []}
     try:
-        candidates = _tavily_search(query, max_results, api_key)
+        candidates = search_web(query, max_results, api_key=api_key)
         return {
             "results": [
                 {"url": c.url, "title": c.title, "snippet": c.snippet or ""}
@@ -354,7 +354,7 @@ def _record_retrieval_event(
             job_id=job_id,
             cluster_id=cluster_id,
             query=query[:500],
-            provider="tavily",
+            provider=OPENAI_SEARCH_PROVIDER,
             num_candidates=num_results,
             num_accepted=num_results,
             latency_ms=latency_ms,
@@ -410,10 +410,6 @@ def run_research(
     """
     if not os.environ.get("OPENAI_API_KEY"):
         logger.debug("research_agent_skipped reason=no_openai_key cluster_id=%s", cluster.id)
-        return None
-
-    if not _get_api_key("tavily"):
-        logger.debug("research_agent_skipped reason=no_search_key cluster_id=%s", cluster.id)
         return None
 
     model = _get_model()

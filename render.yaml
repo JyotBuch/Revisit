@@ -5,7 +5,7 @@
 ##   1. Push this repo to GitHub.
 ##   2. In the Render dashboard → New → Blueprint → select this repo.
 ##   3. Set the secret env vars marked `sync: false` in the dashboard
-##      (Google OAuth, extension origin, OPENAI_API_KEY, and TAVILY_API_KEY).
+##      (Google OAuth, extension origin, and OPENAI_API_KEY).
 ##   4. Deploy — startup runs `alembic upgrade head` then starts gunicorn.
 
 services:
@@ -67,16 +67,16 @@ services:
         value: gpt-4o-mini
       - key: OPENAI_RESEARCH_MODEL
         value: gpt-4o-mini
+      - key: OPENAI_SEARCH_MODEL
+        value: gpt-4o-mini
       - key: OPENAI_MEMORY_EMBEDDING_MODEL
         value: text-embedding-3-small
 
       # Web search for related resources — optional.
-      # Set SEARCH_PROVIDER=tavily and TAVILY_API_KEY=<key> to enable real search.
-      # Without both set, retrieval falls back to a fake local provider.
+      # Uses OPENAI_API_KEY above. Without it, retrieval falls back to a fake
+      # local provider.
       - key: SEARCH_PROVIDER
-        value: tavily
-      - key: TAVILY_API_KEY
-        sync: false   # set in Render dashboard if using real search
+        value: openai
 
       - key: PYTHON_VERSION
         value: "3.12.0"

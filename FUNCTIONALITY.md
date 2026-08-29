@@ -505,8 +505,8 @@ capture's title/text if the cluster has none) →
 `validate_resource_for_cluster` scores each candidate → only candidates
 clearing the validation threshold (default `0.50`) are stored.
 
-**Fake provider vs. real provider**: set `SEARCH_PROVIDER=tavily` and
-`TAVILY_API_KEY=<key>` to use the Tavily Search API. Without both set,
+**Fake provider vs. real provider**: set `SEARCH_PROVIDER=openai` and
+`OPENAI_API_KEY=<key>` to use OpenAI web search. Without both set,
 retrieval falls back to a **deterministic local fake provider** — clearly
 development/testing only. The fake provider does not search the web: it
 builds plausible-looking candidates out of the cluster's *own* capture
@@ -921,7 +921,7 @@ the Render dashboard under **Environment → Environment Variables**:
 | `APP_USERNAME` | Your login username |
 | `APP_PASSWORD` | A strong password |
 | `OPENAI_API_KEY` | Your OpenAI key (optional — embeddings/LLM fall back without it) |
-| `TAVILY_API_KEY` | Tavily Search API key (optional — only if you set `SEARCH_PROVIDER=tavily`) |
+| `OPENAI_SEARCH_MODEL` | OpenAI model used with the hosted web-search tool (default `gpt-4o-mini`) |
 
 **4. Deploy**
 

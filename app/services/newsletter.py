@@ -19,6 +19,7 @@ from app.schemas.capture import CaptureLabel
 from app.schemas.job import JobStatus
 from app.services import memory as memory_service
 from app.services import telemetry
+from app.services.openai_search import OPENAI_SEARCH_PROVIDER, search_web
 
 MAX_CAPTURES_PER_ISSUE = int(os.environ.get("NEWSLETTER_MAX_CAPTURES", "20"))
 MAX_SOURCES_PER_CAPTURE = 3
@@ -51,7 +52,7 @@ def _search(
     job_id: str | None = None, instruction: str | None = None,
     memories: list[tuple] | None = None,
 ) -> list[dict]:
-    api_key = os.environ.get("TAVILY_API_KEY") or os.environ.get("SEARCH_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return []
     saved_context = " ".join(filter(None, [capture.title, (capture.selected_text or "")[:180]]))
@@ -65,26 +66,22 @@ def _search(
         query = f"{saved_context} Prior leads to revalidate: {memory_leads}"[:500]
     started = time.monotonic()
     try:
-        response = requests.post("https://api.tavily.com/search", json={
-            "api_key": api_key, "query": query, "max_results": MAX_SOURCES_PER_CAPTURE,
-            "search_depth": "advanced", "include_answer": False, "include_images": False,
-        }, timeout=20)
-        response.raise_for_status()
+        candidates = search_web(query, MAX_SOURCES_PER_CAPTURE, api_key=api_key)
         sources = []
-        for row in response.json().get("results", []):
-            safe_url = _safe_web_url(row.get("url"))
+        for row in candidates:
+            safe_url = _safe_web_url(row.url)
             if not safe_url:
                 continue
             sources.append({
-                "title": str(row.get("title") or safe_url)[:500],
+                "title": str(row.title or safe_url)[:500],
                 "url": safe_url,
-                "snippet": str(row.get("content") or "")[:4000],
+                "snippet": str(row.snippet or "")[:4000],
             })
         accepted = sources[:MAX_SOURCES_PER_CAPTURE]
         _safe_telemetry(db, lambda: telemetry.record_retrieval_event(
             db, user_id=user_id, job_id=job_id, owner_type="capture", owner_id=capture.id,
             query=query, query_intent="user_question" if user_question else "saved_passage",
-            provider="tavily", num_candidates=len(response.json().get("results", [])),
+            provider=OPENAI_SEARCH_PROVIDER, num_candidates=len(candidates),
             num_accepted=len(accepted), accepted_ids=[telemetry.content_hash(s["url"]) or "" for s in accepted],
             memory_ids=[row.id for row, _ in (memories or [])],
             memory_scores=[score or 0.0 for _, score in (memories or [])],
@@ -95,7 +92,7 @@ def _search(
         _safe_telemetry(db, lambda: telemetry.record_retrieval_event(
             db, user_id=user_id, job_id=job_id, owner_type="capture", owner_id=capture.id,
             query=query, query_intent="user_question" if user_question else "saved_passage",
-            provider="tavily", latency_ms=int((time.monotonic() - started) * 1000),
+            provider=OPENAI_SEARCH_PROVIDER, latency_ms=int((time.monotonic() - started) * 1000),
             status="failed", error=type(exc).__name__,
         ))
         return []

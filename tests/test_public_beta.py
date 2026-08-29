@@ -91,31 +91,20 @@ def test_newsletter_source_urls_reject_active_schemes():
 
 
 def test_newsletter_search_prioritizes_user_question(monkeypatch):
-    observed = {}
-
-    class SearchResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"results": []}
-
-    def fake_post(url, *, json, timeout):
-        observed.update(json)
-        return SearchResponse()
-
-    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
-    monkeypatch.setattr("app.services.newsletter.requests.post", fake_post)
+    from unittest.mock import patch
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     capture = CaptureORM(
         id=str(uuid.uuid4()), source_type=SourceType.passage, label=CaptureLabel.return_,
         title="Open versus closed AI", selected_text="Should models be open?",
         user_note="What have other AI leaders said about this?",
     )
 
-    _search(capture)
+    with patch("app.services.newsletter.search_web", return_value=[]) as search:
+        _search(capture)
 
-    assert observed["query"].startswith("What have other AI leaders said about this?")
-    assert "Open versus closed AI" in observed["query"]
+    query = search.call_args.args[0]
+    assert query.startswith("What have other AI leaders said about this?")
+    assert "Open versus closed AI" in query
 
 
 def test_public_capture_rejects_non_web_url(client, db):

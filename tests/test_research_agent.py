@@ -1,6 +1,6 @@
 """Tests for the research agent — no real API keys required.
 
-Unit tests mock Tavily and OpenAI. Integration tests use the real test DB
+Unit tests mock OpenAI web search and synthesis. Integration tests use the real test DB
 but mock all HTTP/AI calls so no network access is needed.
 """
 
@@ -186,13 +186,13 @@ def _make_openai_search_read_finish(url="https://example.com/article"):
 # ---------------------------------------------------------------------------
 
 def test_execute_search_web_returns_results(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     fake_candidates = [
         MagicMock(url="https://ex.com/1", title="Result 1", snippet="Snippet 1"),
         MagicMock(url="https://ex.com/2", title="Result 2", snippet="Snippet 2"),
     ]
-    with patch("app.services.research_agent._tavily_search", return_value=fake_candidates):
+    with patch("app.services.research_agent.search_web", return_value=fake_candidates):
         result = _execute_search_web("neural networks", 5)
 
     assert len(result["results"]) == 2
@@ -201,10 +201,10 @@ def test_execute_search_web_returns_results(monkeypatch):
     assert "error" not in result or result.get("error") is None
 
 
-def test_execute_search_web_returns_empty_on_tavily_failure(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+def test_execute_search_web_returns_empty_on_openai_search_failure(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
-    with patch("app.services.research_agent._tavily_search", side_effect=Exception("timeout")):
+    with patch("app.services.research_agent.search_web", side_effect=Exception("timeout")):
         result = _execute_search_web("query", 5)
 
     assert result["results"] == []
@@ -212,7 +212,7 @@ def test_execute_search_web_returns_empty_on_tavily_failure(monkeypatch):
 
 
 def test_execute_search_web_no_key_returns_error(monkeypatch):
-    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("SEARCH_API_KEY", raising=False)
 
     result = _execute_search_web("query", 5)
@@ -226,7 +226,7 @@ def test_execute_search_web_no_key_returns_error(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_fetch_article_content_uses_trafilatura(monkeypatch):
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     with patch("trafilatura.fetch_url", return_value="<html>content</html>") as mock_fetch, \
          patch("trafilatura.extract", return_value="Clean article text here " * 20) as mock_extract:
@@ -274,18 +274,6 @@ def test_execute_read_article_truncates_long_content(monkeypatch):
 
 def test_run_research_returns_none_when_no_openai_key(monkeypatch, db):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
-
-    cluster = _make_cluster_with_capture(db)
-    result = run_research(db, cluster)
-
-    assert result is None
-
-
-def test_run_research_returns_none_when_no_search_key(monkeypatch, db):
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
-    monkeypatch.delenv("SEARCH_API_KEY", raising=False)
 
     cluster = _make_cluster_with_capture(db)
     result = run_research(db, cluster)
@@ -299,7 +287,7 @@ def test_run_research_returns_none_when_no_search_key(monkeypatch, db):
 
 def test_run_research_finish_terminates_immediately(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     resp = _make_openai_finish_response()
@@ -319,7 +307,7 @@ def test_run_research_finish_terminates_immediately(monkeypatch, db):
 
 def test_run_research_max_iterations_exits_without_finish(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
     monkeypatch.setenv("RESEARCH_MAX_ITERATIONS", "3")
 
     cluster = _make_cluster_with_capture(db)
@@ -334,7 +322,7 @@ def test_run_research_max_iterations_exits_without_finish(monkeypatch, db):
     resp.usage = MagicMock(prompt_tokens=10, completion_tokens=5, total_tokens=15)
 
     with patch("app.services.research_agent.OpenAI") as mock_openai_cls, \
-         patch("app.services.research_agent._tavily_search", return_value=[]):
+         patch("app.services.research_agent.search_web", return_value=[]):
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = resp
         mock_openai_cls.return_value = mock_client
@@ -347,7 +335,7 @@ def test_run_research_max_iterations_exits_without_finish(monkeypatch, db):
 
 def test_run_research_stores_resource_on_read_article(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     article_url = "https://example.com/neural-nets"
@@ -358,7 +346,7 @@ def test_run_research_stores_resource_on_read_article(monkeypatch, db):
     ]
 
     with patch("app.services.research_agent.OpenAI") as mock_openai_cls, \
-         patch("app.services.research_agent._tavily_search", return_value=fake_search_results), \
+         patch("app.services.research_agent.search_web", return_value=fake_search_results), \
          patch("app.services.research_agent._fetch_article_content", return_value="Full article text about neural nets " * 50):
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = responses
@@ -377,7 +365,7 @@ def test_run_research_stores_resource_on_read_article(monkeypatch, db):
 
 def test_run_research_skips_duplicate_resource(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     article_url = "https://example.com/dup"
@@ -390,7 +378,7 @@ def test_run_research_skips_duplicate_resource(monkeypatch, db):
         url=article_url,
         title="Pre-existing",
         source_type="article",
-        provider="tavily",
+        provider="openai-web-search",
         relevance_score=0.8,
         validation_score=0.8,
         validation_reason="pre-seeded",
@@ -400,7 +388,7 @@ def test_run_research_skips_duplicate_resource(monkeypatch, db):
     fake_search = [MagicMock(url=article_url, title="Dup Article", snippet="...")]
 
     with patch("app.services.research_agent.OpenAI") as mock_openai_cls, \
-         patch("app.services.research_agent._tavily_search", return_value=fake_search), \
+         patch("app.services.research_agent.search_web", return_value=fake_search), \
          patch("app.services.research_agent._fetch_article_content", return_value="content " * 100):
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = responses
@@ -415,7 +403,7 @@ def test_run_research_skips_duplicate_resource(monkeypatch, db):
 
 def test_run_research_records_llm_call_telemetry(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     resp = _make_openai_finish_response()
@@ -437,14 +425,14 @@ def test_run_research_records_llm_call_telemetry(monkeypatch, db):
 
 def test_run_research_records_retrieval_event_on_search(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     responses = _make_openai_search_then_finish_response()
     fake_search = [MagicMock(url="https://ex.com/1", title="T1", snippet="S1")]
 
     with patch("app.services.research_agent.OpenAI") as mock_openai_cls, \
-         patch("app.services.research_agent._tavily_search", return_value=fake_search):
+         patch("app.services.research_agent.search_web", return_value=fake_search):
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = responses
         mock_openai_cls.return_value = mock_client
@@ -457,12 +445,12 @@ def test_run_research_records_retrieval_event_on_search(monkeypatch, db):
         {"cid": cluster.id},
     ).fetchall()
     assert len(rows) >= 1
-    assert rows[0][1] == "tavily"
+    assert rows[0][1] == "openai-web-search"
 
 
 def test_run_research_returns_structured_notes_fields(monkeypatch, db):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "tvly-test")
 
     cluster = _make_cluster_with_capture(db)
     resp = _make_openai_finish_response(

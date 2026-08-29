@@ -55,7 +55,7 @@ def test_telemetry_redacts_content_and_never_stores_raw_query(db, monkeypatch):
     )
     telemetry.record_retrieval_event(
         db, user_id=user.id, query="private selected passage", query_intent="user_question",
-        provider="tavily", status="succeeded",
+        provider="openai-web-search", status="succeeded",
     )
     db.commit()
 

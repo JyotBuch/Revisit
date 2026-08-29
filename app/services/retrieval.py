@@ -1,10 +1,9 @@
 """Related-resource retrieval for clusters.
 
-Supports one real provider — Tavily Search, via SEARCH_PROVIDER=tavily +
-TAVILY_API_KEY (or SEARCH_API_KEY as a legacy fallback) — and a
+Supports OpenAI web search, via SEARCH_PROVIDER=openai + OPENAI_API_KEY, and a
 deterministic fake provider used whenever a real provider isn't configured
 or the real call fails/returns nothing. Brave Search (SEARCH_PROVIDER=brave)
-is kept for backward compatibility but Tavily is the recommended provider.
+is kept for backward compatibility.
 
 The fake provider is clearly development/testing only: it does not search the
 web. It fabricates plausible-looking resource candidates derived from a hash
@@ -34,11 +33,12 @@ from app.schemas.resource import Resource, ResourceCandidate
 from app.services import resource_store, telemetry
 from app.services.clustering import get_cluster
 from app.services.resource_validation import validate_resource_for_cluster
+from app.services.openai_search import search_web as _openai_search
 
 logger = logging.getLogger("revisit.retrieval")
 
 FAKE_PROVIDER_NAME = "fake-local-dev-v1"
-_SUPPORTED_REAL_PROVIDERS = {"tavily", "brave"}
+_SUPPORTED_REAL_PROVIDERS = {"openai", "brave"}
 
 
 @dataclass
@@ -118,41 +118,6 @@ def _fake_resources_for_query(
     return candidates
 
 
-def _tavily_search(query: str, limit: int, api_key: str) -> List[ResourceCandidate]:
-    response = requests.post(
-        "https://api.tavily.com/search",
-        json={
-            "api_key": api_key,
-            "query": query,
-            "max_results": limit,
-            "search_depth": "basic",
-            "include_answer": False,
-            "include_images": False,
-        },
-        timeout=10,
-    )
-    response.raise_for_status()
-    results = response.json().get("results") or []
-
-    candidates = []
-    for item in results[:limit]:
-        url = item.get("url")
-        title = item.get("title")
-        if not url or not title:
-            continue
-        candidates.append(
-            ResourceCandidate(
-                url=url,
-                title=title,
-                source_type="article",
-                snippet=item.get("content"),
-                query=query,
-                provider="tavily",
-            )
-        )
-    return candidates
-
-
 def _brave_search(query: str, limit: int, api_key: str) -> List[ResourceCandidate]:
     response = requests.get(
         "https://api.search.brave.com/res/v1/web/search",
@@ -185,11 +150,10 @@ def _brave_search(query: str, limit: int, api_key: str) -> List[ResourceCandidat
 def _get_api_key(provider: str) -> Optional[str]:
     """Return the API key for the given provider.
 
-    For Tavily: checks TAVILY_API_KEY first, then SEARCH_API_KEY (legacy).
-    For Brave and others: checks SEARCH_API_KEY only.
+    OpenAI search shares OPENAI_API_KEY with synthesis. Brave uses SEARCH_API_KEY.
     """
-    if provider == "tavily":
-        return os.environ.get("TAVILY_API_KEY") or os.environ.get("SEARCH_API_KEY")
+    if provider == "openai":
+        return os.environ.get("OPENAI_API_KEY")
     return os.environ.get("SEARCH_API_KEY")
 
 
@@ -210,8 +174,8 @@ def retrieve_resources_for_cluster(
 
     if provider in _SUPPORTED_REAL_PROVIDERS and api_key:
         try:
-            if provider == "tavily":
-                candidates = _tavily_search(query, limit, api_key)
+            if provider == "openai":
+                candidates = _openai_search(query, limit, api_key=api_key)
             else:
                 candidates = _brave_search(query, limit, api_key)
 

@@ -83,7 +83,7 @@ The waitlist uses a public GitHub issue. Please do not include private, confiden
 
 ## For developers
 
-Revisit currently uses FastAPI and Jinja for the web app, PostgreSQL for persistence, a Manifest V3 Chrome extension for capture, Tavily for source discovery, and OpenAI for newsletter synthesis. The checked-in Render Blueprint provides a free testing deployment with inline research jobs.
+Revisit currently uses FastAPI and Jinja for the web app, PostgreSQL for persistence, a Manifest V3 Chrome extension for capture, and OpenAI web search and synthesis. The checked-in Render Blueprint provides a free testing deployment with inline research jobs.
 
 ### Run locally
 
@@ -97,7 +97,7 @@ make migrate
 make dev
 ```
 
-Open `http://127.0.0.1:8000`. Add `OPENAI_API_KEY` and `TAVILY_API_KEY` to `.env` to enable live research; see [the extension setup guide](extension/README.md) to load the Chrome extension locally.
+Open `http://127.0.0.1:8000`. Add `OPENAI_API_KEY` to `.env` to enable live search and research; see [the extension setup guide](extension/README.md) to load the Chrome extension locally.
 
 ### Tests
 
