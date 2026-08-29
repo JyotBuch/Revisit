@@ -54,6 +54,12 @@ The passage, URL, page title, domain, author, description, and capture time are 
 
 <p align="center"><em>Your saved passage stays visible alongside the resulting research and sources. Beta interface shown.</em></p>
 
+<p align="center">
+  <img src="docs/images/revisit-research-briefing.png" width="820" alt="A Revisit research briefing answering a saved question with a sourced synthesis and follow-up prompt">
+</p>
+
+<p align="center"><em>Ask a focused question and get a sourced briefing with a useful next question.</em></p>
+
 ## What the beta includes
 
 - A Manifest V3 Chrome extension with an inline selection interface
